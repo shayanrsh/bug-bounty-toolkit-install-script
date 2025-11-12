@@ -76,9 +76,34 @@ ui_progress_bar() {
     filled_bar=$(printf "█%.0s" $(seq 1 "$filled_width" 2>/dev/null))
     empty_bar=$(printf "░%.0s" $(seq 1 "$empty_width" 2>/dev/null))
     
-    # Display progress
-    printf "\r${CYAN}[${bar_color}%s${CYAN}%s] %3d%% (%d/%d)${NC} %s" \
+    # Display progress - clear line first, then show new progress
+    printf "\r\033[K${CYAN}[${bar_color}%s${CYAN}%s] %3d%% (%d/%d)${NC} %s" \
            "$filled_bar" "$empty_bar" "$percentage" "$current" "$total" "$message"
+}
+
+# Enhanced progress bar with spinner for active installations
+ui_progress_with_spinner() {
+    local current="$1"
+    local total="$2"
+    local message="${3:-Processing}"
+    local spinner_chars="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    local spinner_index=$((RANDOM % ${#spinner_chars}))
+    local spinner_char="${spinner_chars:$spinner_index:1}"
+    
+    local percentage=$((current * 100 / total))
+    local filled_width=$((current * PROGRESS_BAR_WIDTH / total))
+    local empty_width=$((PROGRESS_BAR_WIDTH - filled_width))
+    
+    local bar_color="$RED"
+    [[ $percentage -ge 75 ]] && bar_color="$GREEN"
+    [[ $percentage -ge 50 && $percentage -lt 75 ]] && bar_color="$YELLOW"
+    [[ $percentage -ge 25 && $percentage -lt 50 ]] && bar_color="$BLUE"
+    
+    local filled_bar=$(printf "█%.0s" $(seq 1 "$filled_width" 2>/dev/null))
+    local empty_bar=$(printf "░%.0s" $(seq 1 "$empty_width" 2>/dev/null))
+    
+    printf "\r\033[K${CYAN}[${bar_color}%s${CYAN}%s] %3d%% (%d/%d)${NC} ${YELLOW}%s${NC} %s" \
+           "$filled_bar" "$empty_bar" "$percentage" "$current" "$total" "$spinner_char" "$message"
 }
 
 # Spinner for background operations

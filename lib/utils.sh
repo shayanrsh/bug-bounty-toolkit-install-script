@@ -48,6 +48,105 @@ util_is_wsl() {
     grep -qi microsoft /proc/version 2>/dev/null || [[ -n "${WSL_DISTRO_NAME:-}" ]]
 }
 
+# ==============================================================================
+# APT Lock Handling
+# ==============================================================================
+
+util_wait_for_apt_lock() {
+    local max_wait=300  # 5 minutes
+    local waited=0
+    local lock_files=(
+        "/var/lib/dpkg/lock-frontend"
+        "/var/lib/dpkg/lock"
+        "/var/lib/apt/lists/lock"
+        "/var/cache/apt/archives/lock"
+    )
+    
+    # Check if any lock files exist
+    local locks_found=false
+    for lock_file in "${lock_files[@]}"; do
+        if sudo lsof "$lock_file" &>/dev/null; then
+            locks_found=true
+            break
+        fi
+    done
+    
+    if [[ "$locks_found" == "false" ]]; then
+        return 0
+    fi
+    
+    log_warning "APT/dpkg is locked by another process"
+    log_info "Waiting for lock to be released (timeout: ${max_wait}s)..."
+    
+    while [[ $waited -lt $max_wait ]]; do
+        local all_clear=true
+        
+        for lock_file in "${lock_files[@]}"; do
+            if sudo lsof "$lock_file" &>/dev/null; then
+                all_clear=false
+                break
+            fi
+        done
+        
+        if [[ "$all_clear" == "true" ]]; then
+            log_success "APT lock released"
+            return 0
+        fi
+        
+        printf "\r${YELLOW}⏳${NC} Waiting for APT lock... (%ds/%ds)" "$waited" "$max_wait"
+        sleep 2
+        ((waited+=2))
+    done
+    
+    echo ""
+    log_error "Timeout waiting for APT lock"
+    
+    if [[ "$INTERACTIVE" == "true" ]]; then
+        if ui_confirm "Force kill processes holding APT locks?" "n"; then
+            util_force_kill_apt_locks
+            return $?
+        fi
+    fi
+    
+    return 1
+}
+
+util_force_kill_apt_locks() {
+    log_warning "Force killing processes holding APT locks..."
+    
+    local lock_files=(
+        "/var/lib/dpkg/lock-frontend"
+        "/var/lib/dpkg/lock"
+        "/var/lib/apt/lists/lock"
+        "/var/cache/apt/archives/lock"
+    )
+    
+    local killed=false
+    for lock_file in "${lock_files[@]}"; do
+        if [[ -f "$lock_file" ]]; then
+            local pids=$(sudo lsof -t "$lock_file" 2>/dev/null)
+            if [[ -n "$pids" ]]; then
+                log_info "Killing processes: $pids"
+                sudo kill -9 $pids 2>/dev/null && killed=true
+            fi
+        fi
+    done
+    
+    # Remove lock files
+    for lock_file in "${lock_files[@]}"; do
+        sudo rm -f "$lock_file" 2>/dev/null
+    done
+    
+    # Reconfigure dpkg if needed
+    if $killed; then
+        log_info "Reconfiguring dpkg..."
+        sudo dpkg --configure -a 2>/dev/null || true
+    fi
+    
+    log_success "APT locks cleared"
+    return 0
+}
+
 util_is_root() {
     [[ $EUID -eq 0 ]]
 }

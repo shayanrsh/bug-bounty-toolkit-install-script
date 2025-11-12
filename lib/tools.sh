@@ -28,6 +28,12 @@ tool_install_zsh() {
         log_info "Installing ${#packages[@]} package(s): ${packages[*]}"
         
         if [[ "$DRY_RUN" == "false" ]]; then
+            # Wait for apt lock if needed
+            util_wait_for_apt_lock || {
+                log_error "Cannot proceed with package installation"
+                return 1
+            }
+            
             # Update package lists with progress
             if ! ui_exec_with_progress "Updating package lists" sudo apt-get update -qq; then
                 log_warning "Package list update had warnings (continuing...)"
@@ -431,29 +437,44 @@ tool_install_go_tools() {
         local tool_path="${tool_info%%|*}"
         local description="${tool_info##*|}"
         
-        # Show progress bar
-        ui_progress_bar "$current" "$total" "$tool_pkg"
-        
         if [[ "$DRY_RUN" == "false" ]]; then
-            # Install with real-time feedback
-            log_info "[$current/$total] Installing $tool_pkg: $description"
+            # Show progress with spinner
+            ui_progress_with_spinner "$current" "$total" "Installing $tool_pkg..."
+            echo ""
+            log_info "[$current/$total] $tool_pkg: $description"
             
-            if go install -v "$tool_path" 2>&1 | tee -a "$LOG_FILE" | grep -q "go: downloading\|go: finding"; then
-                # Installation in progress
-                :
-            fi
+            # Install tool in background and show spinner
+            (
+                go install -v "$tool_path" 2>&1 | tee -a "$LOG_FILE"
+            ) &
+            local install_pid=$!
+            
+            # Show spinner while installing
+            local spinner_chars="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+            local spinner_idx=0
+            while kill -0 $install_pid 2>/dev/null; do
+                local sp="${spinner_chars:$spinner_idx:1}"
+                printf "\r  ${YELLOW}%s${NC} Downloading and compiling..." "$sp"
+                spinner_idx=$(( (spinner_idx + 1) % ${#spinner_chars} ))
+                sleep 0.1
+            done
+            
+            wait $install_pid
+            local install_result=$?
             
             # Check if tool was installed
             local tool_binary="$(go env GOPATH)/bin/$tool_pkg"
-            if [[ -f "$tool_binary" ]]; then
-                log_success "✓ $tool_pkg installed successfully"
-                local version=$(util_get_tool_version "$tool_pkg" 2>/dev/null || echo "unknown")
+            if [[ -f "$tool_binary" ]] && [[ $install_result -eq 0 ]]; then
+                printf "\r  ${GREEN}✓${NC} Successfully installed $tool_pkg\n"
+                local version=$(util_get_tool_version "$tool_pkg" 2>/dev/null || echo "latest")
                 util_manifest_add_tool "go_tools" "$tool_pkg" "$version" "$tool_binary"
             else
-                log_error "✗ Failed to install $tool_pkg"
+                printf "\r  ${RED}✗${NC} Failed to install $tool_pkg\n"
                 failed_tools+=("$tool_pkg")
             fi
         else
+            ui_progress_bar "$current" "$total" "$tool_pkg"
+            echo ""
             log_info "[DRY RUN] Would install: $tool_pkg ($tool_path)"
         fi
         
