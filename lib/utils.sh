@@ -11,12 +11,29 @@
 # Command Existence Checks
 # ==============================================================================
 
+# Package installation cache to avoid repeated dpkg calls
+declare -A PACKAGE_CACHE=()
+
 util_command_exists() {
     command -v "$1" &>/dev/null
 }
 
 util_package_installed() {
-    dpkg -l 2>/dev/null | grep -q "^ii  $1 "
+    local pkg="$1"
+    
+    # Check cache first
+    if [[ -n "${PACKAGE_CACHE[$pkg]:-}" ]]; then
+        [[ "${PACKAGE_CACHE[$pkg]}" == "installed" ]] && return 0 || return 1
+    fi
+    
+    # Check actual installation and cache result
+    if dpkg -l 2>/dev/null | grep -q "^ii  $pkg "; then
+        PACKAGE_CACHE[$pkg]="installed"
+        return 0
+    else
+        PACKAGE_CACHE[$pkg]="not_installed"
+        return 1
+    fi
 }
 
 # ==============================================================================
@@ -52,9 +69,43 @@ util_is_wsl() {
 # APT Lock Handling - IMPROVED
 # ==============================================================================
 
+# Track if APT has been updated this session
+APT_UPDATED=false
+
+util_apt_update() {
+    if [[ "$APT_UPDATED" == "true" ]]; then
+        log_debug "APT cache already updated this session, skipping"
+        return 0
+    fi
+    
+    log_info "Updating package lists..."
+    
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "[DRY RUN] Would update APT cache"
+        APT_UPDATED=true
+        return 0
+    fi
+    
+    # Acquire lock first
+    if ! util_apt_lock_acquire; then
+        log_error "Could not acquire APT lock for update"
+        return 1
+    fi
+    
+    if sudo apt-get update 2>&1 | tee -a "$LOG_FILE" | grep -q "^Reading"; then
+        APT_UPDATED=true
+        log_success "Package lists updated successfully"
+        return 0
+    else
+        log_error "Failed to update package lists"
+        return 1
+    fi
+}
+
 util_apt_lock_acquire() {
     # Try to acquire APT lock by running a dummy apt-get command
-    local max_wait=300  # 5 minutes
+    local max_wait="$APT_LOCK_TIMEOUT"
+    local check_interval="$APT_LOCK_CHECK_INTERVAL"
     local waited=0
     
     while [[ $waited -lt $max_wait ]]; do
@@ -68,8 +119,8 @@ util_apt_lock_acquire() {
             util_log_apt_lock_holders
         fi
         
-        sleep 2
-        ((waited+=2))
+        sleep "$check_interval"
+        ((waited+=check_interval))
     done
     
     log_error "Timeout waiting for APT lock after ${max_wait}s"
@@ -77,7 +128,7 @@ util_apt_lock_acquire() {
 }
 
 util_wait_for_apt_lock() {
-    local max_wait=300  # 5 minutes
+    local max_wait="$APT_LOCK_TIMEOUT"
     local waited=0
     local last_report=-10
     local lock_files=(
@@ -170,6 +221,27 @@ util_force_kill_apt_locks() {
     return 0
 }
 
+# ==============================================================================
+# Root/Sudo Handling
+# ==============================================================================
+
+util_is_root() {
+    [[ "$EUID" -eq 0 ]]
+}
+
+util_sudo() {
+    # Smart sudo wrapper - if already root, run directly; otherwise use sudo
+    if util_is_root; then
+        "$@"  # Already root, no sudo needed
+    else
+        sudo -n "$@" 2>/dev/null || sudo "$@"  # Try non-interactive first
+    fi
+}
+
+# ==============================================================================
+# APT Lock Holders
+# ==============================================================================
+
 util_get_apt_lock_holders() {
     local lock_files=(
         "/var/lib/dpkg/lock-frontend"
@@ -215,6 +287,56 @@ util_log_apt_lock_holders() {
 
 util_is_root() {
     [[ $EUID -eq 0 ]]
+}
+
+# ==============================================================================
+# Input Validation
+# ==============================================================================
+
+util_validate_url() {
+    local url="$1"
+    
+    # Basic URL validation
+    if [[ ! "$url" =~ ^https?:// ]]; then
+        return 1
+    fi
+    
+    # Check for suspicious characters
+    if [[ "$url" =~ [[:space:]] ]] || [[ "$url" =~ [\;\&\|] ]]; then
+        return 1
+    fi
+    
+    return 0
+}
+
+util_validate_path() {
+    local path="$1"
+    
+    # Check for path traversal attempts
+    if [[ "$path" == *".."* ]]; then
+        log_warning "Path contains '..' which may be a traversal attempt: $path"
+        return 1
+    fi
+    
+    # Check for suspicious characters
+    if [[ "$path" =~ [\;\&\|\$\`] ]]; then
+        log_warning "Path contains suspicious characters: $path"
+        return 1
+    fi
+    
+    return 0
+}
+
+util_validate_profile_name() {
+    local profile="$1"
+    
+    # Only allow alphanumeric, dash, underscore
+    if [[ ! "$profile" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        log_error "Invalid profile name: $profile (only alphanumeric, dash, underscore allowed)"
+        return 1
+    fi
+    
+    return 0
 }
 
 # ==============================================================================
@@ -287,6 +409,63 @@ util_check_ubuntu_version() {
         fi
     fi
     return 0
+}
+
+# Get Ubuntu version number
+util_get_ubuntu_version() {
+    lsb_release -rs 2>/dev/null || echo "unknown"
+}
+
+# Get Ubuntu codename
+util_get_ubuntu_codename() {
+    lsb_release -cs 2>/dev/null || echo "unknown"
+}
+
+# Check if Ubuntu version is supported
+util_is_ubuntu_version_supported() {
+    local version
+    version=$(util_get_ubuntu_version)
+    
+    case "$version" in
+        24.04|22.04|20.04)
+            return 0
+            ;;
+        *)
+            log_warning "Ubuntu $version may not be fully supported (tested on 20.04, 22.04, 24.04)"
+            return 1
+            ;;
+    esac
+}
+
+# Get version-specific package name if needed
+# Usage: util_get_version_specific_package "base_name"
+util_get_version_specific_package() {
+    local base_name="$1"
+    local version
+    version=$(util_get_ubuntu_version)
+    
+    # Some packages have version-specific names
+    case "$base_name" in
+        python3-venv)
+            case "$version" in
+                20.04)
+                    echo "python3.8-venv"
+                    ;;
+                22.04)
+                    echo "python3.10-venv"
+                    ;;
+                24.04)
+                    echo "python3.12-venv"
+                    ;;
+                *)
+                    echo "python3-venv"
+                    ;;
+            esac
+            ;;
+        *)
+            echo "$base_name"
+            ;;
+    esac
 }
 
 util_check_prerequisites() {
@@ -384,10 +563,51 @@ util_retry() {
 # Download Functions
 # ==============================================================================
 
+util_download_cached() {
+    local url="$1"
+    local output="$2"
+    local description="${3:-Download}"
+    local cache_key
+    cache_key=$(echo -n "$url" | md5sum | awk '{print $1}')
+    local cached_file="$CACHE_DIR/$cache_key"
+    
+    # Create cache directory if needed
+    mkdir -p "$CACHE_DIR"
+    
+    # Check if cached file exists and is recent (< 24 hours)
+    if [[ -f "$cached_file" ]]; then
+        local file_age_hours
+        file_age_hours=$(( ($(date +%s) - $(stat -c %Y "$cached_file" 2>/dev/null || stat -f %m "$cached_file" 2>/dev/null || echo 0)) / 3600 ))
+        
+        if [[ $file_age_hours -lt $CACHE_MAX_AGE_HOURS ]]; then
+            log_info "Using cached file for $description (age: ${file_age_hours}h)"
+            cp "$cached_file" "$output"
+            return 0
+        else
+            log_debug "Cached file expired (age: ${file_age_hours}h), re-downloading"
+        fi
+    fi
+    
+    # Download fresh copy
+    if util_download "$url" "$output" "$description"; then
+        # Cache the downloaded file
+        cp "$output" "$cached_file"
+        return 0
+    fi
+    
+    return 1
+}
+
 util_download() {
     local url="$1"
     local output="$2"
     local description="${3:-Download}"
+    
+    # Validate URL
+    if ! util_validate_url "$url"; then
+        log_error "Invalid URL: $url"
+        return 1
+    fi
     
     log_info "Downloading: $description"
     log_debug "URL: $url -> $output"
@@ -485,9 +705,12 @@ util_git_clone() {
     
     if ui_stream_command "Cloning ${description}" git clone --depth=1 "$repo_url" "$dest_dir"; then
         return 0
+    else
+        # Clean up partial clone on failure
+        log_warning "Clone failed, cleaning up partial directory"
+        rm -rf "$dest_dir" 2>/dev/null || true
+        return 1
     fi
-
-    return 1
 }
 
 util_git_update() {
@@ -520,28 +743,40 @@ util_git_update() {
 
 util_get_tool_version() {
     local tool_name="$1"
+    local version="unknown"
     
     case "$tool_name" in
         go)
-            go version 2>/dev/null | awk '{print $3}' | sed 's/go//'
+            version=$(go version 2>/dev/null | awk '{print $3}' | sed 's/go//')
             ;;
         rustc|rust)
-            rustc --version 2>/dev/null | awk '{print $2}'
+            version=$(rustc --version 2>/dev/null | awk '{print $2}')
             ;;
         python|python3)
-            python3 --version 2>/dev/null | awk '{print $2}'
+            version=$(python3 --version 2>/dev/null | awk '{print $2}')
             ;;
         zsh)
-            zsh --version 2>/dev/null | awk '{print $2}'
+            version=$(zsh --version 2>/dev/null | awk '{print $2}')
             ;;
         *)
             if util_command_exists "$tool_name"; then
-                "$tool_name" --version 2>/dev/null | head -n1 | grep -oP '\d+\.\d+(\.\d+)?' || echo "unknown"
+                # Try multiple version flags in order
+                for flag in "--version" "-version" "-v" "version"; do
+                    version=$("$tool_name" $flag 2>/dev/null | head -n1 | grep -oP '\d+\.\d+(\.\d+)?' || true)
+                    [[ -n "$version" ]] && break
+                done
+                
+                # If still no version, try help output
+                if [[ -z "$version" || "$version" == "unknown" ]]; then
+                    version=$("$tool_name" --help 2>/dev/null | head -n5 | grep -oP '\d+\.\d+(\.\d+)?' | head -n1 || echo "unknown")
+                fi
             else
-                echo "not installed"
+                version="not installed"
             fi
             ;;
     esac
+    
+    echo "${version:-unknown}"
 }
 
 # ==============================================================================
@@ -576,6 +811,12 @@ util_manifest_add_tool() {
     local version="$3"
     local install_path="${4:-}"
     
+    # Skip manifest modifications in dry run mode
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_debug "[DRY RUN] Would add to manifest: $category/$tool_name v$version"
+        return 0
+    fi
+    
     if [[ ! -f "$MANIFEST_FILE" ]]; then
         util_manifest_init
     fi
@@ -603,6 +844,12 @@ util_manifest_set_step() {
     local detail="${4:-}"
 
     if [[ -z "$step_id" ]]; then
+        return 0
+    fi
+    
+    # Skip manifest modifications in dry run mode
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_debug "[DRY RUN] Would update manifest step: $step_id -> $status"
         return 0
     fi
 
@@ -644,6 +891,59 @@ util_generate_manifest() {
 
     rm -f "${MANIFEST_FILE}.fallback"
 }
+
+# ==============================================================================
+# Tool Health Checks
+# ==============================================================================
+
+util_verify_tool() {
+    local tool="$1"
+    local test_args="${2:---version}"
+    
+    log_debug "Verifying tool: $tool"
+    
+    # Check if command exists
+    if ! util_command_exists "$tool"; then
+        log_error "Tool not found in PATH: $tool"
+        return 1
+    fi
+    
+    # Try to execute with test args
+    if timeout 5 "$tool" $test_args >/dev/null 2>&1; then
+        log_success "✓ $tool is working"
+        return 0
+    else
+        log_warning "⚠ $tool exists but may not be working properly"
+        return 1
+    fi
+}
+
+util_health_check() {
+    local category="$1"
+    shift
+    local tools=("$@")
+    local failed=()
+    
+    ui_section_header "Health Check: $category" "$CYAN"
+    
+    for tool in "${tools[@]}"; do
+        if ! util_verify_tool "$tool"; then
+            failed+=("$tool")
+        fi
+    done
+    
+    if [[ ${#failed[@]} -gt 0 ]]; then
+        log_warning "Some tools failed health check: ${failed[*]}"
+        return 1
+    fi
+    
+    log_success "All $category tools passed health check"
+    return 0
+}
+
+# ==============================================================================
+# State Management
+# ==============================================================================
 
 util_state_step_file() {
     local step_id="$1"
@@ -709,18 +1009,57 @@ util_state_clear_step() {
 # Cleanup and Temporary Files
 # ==============================================================================
 
+# Track temporary files for cleanup
+declare -a TEMP_FILES=()
+declare -a TEMP_DIRS=()
+
 util_create_temp_file() {
-    mktemp -t "security-tools.XXXXXX"
+    local temp_file
+    temp_file=$(mktemp -t "security-tools.XXXXXX")
+    TEMP_FILES+=("$temp_file")
+    echo "$temp_file"
 }
 
 util_create_temp_dir() {
-    mktemp -d -t "security-tools.XXXXXX"
+    local temp_dir
+    temp_dir=$(mktemp -d -t "security-tools.XXXXXX")
+    TEMP_DIRS+=("$temp_dir")
+    echo "$temp_dir"
 }
 
 util_cleanup_temp() {
+    # Clean tracked temporary files
+    for temp_file in "${TEMP_FILES[@]}"; do
+        if [[ -f "$temp_file" ]]; then
+            rm -f "$temp_file" 2>/dev/null || true
+            log_trace "Cleaned temp file: $temp_file"
+        fi
+    done
+    
+    # Clean tracked temporary directories
+    for temp_dir in "${TEMP_DIRS[@]}"; do
+        if [[ -d "$temp_dir" ]]; then
+            rm -rf "$temp_dir" 2>/dev/null || true
+            log_trace "Cleaned temp dir: $temp_dir"
+        fi
+    done
+    
+    # Clean any remaining temp files matching pattern
     local temp_pattern="/tmp/security-tools.*"
     # shellcheck disable=SC2086
     rm -rf $temp_pattern 2>/dev/null || true
+}
+
+util_cleanup_single_temp() {
+    local temp_path="$1"
+    
+    if [[ -f "$temp_path" ]]; then
+        rm -f "$temp_path" 2>/dev/null || true
+        log_trace "Cleaned single temp file: $temp_path"
+    elif [[ -d "$temp_path" ]]; then
+        rm -rf "$temp_path" 2>/dev/null || true
+        log_trace "Cleaned single temp dir: $temp_path"
+    fi
 }
 
 # ==============================================================================
@@ -773,6 +1112,11 @@ export PATH="${PATH}:${GOROOT}/bin:${GOPATH}/bin"
         if grep -q "Go Programming Language Configuration" "$rc_file" 2>/dev/null; then
             log_info "Go environment already configured in $rc_file"
         else
+            # Show preview if interactive
+            if [[ "$INTERACTIVE" == "true" ]]; then
+                util_preview_rc_changes "$rc_file" "$go_config" "Go environment configuration"
+            fi
+            
             log_info "Adding Go environment to $rc_file"
             echo "$go_config" >> "$rc_file"
             log_success "Go environment added to $rc_file"
@@ -786,6 +1130,33 @@ export PATH="${PATH}:${GOROOT}/bin:${GOPATH}/bin"
     
     log_success "Go environment configured"
     log_info "Note: Run 'source ~/.zshrc' or 'source ~/.bashrc' to apply changes"
+}
+
+# Preview changes before modifying RC files
+# Usage: util_preview_rc_changes "rc_file" "new_content" "description"
+util_preview_rc_changes() {
+    local rc_file="$1"
+    local new_content="$2"
+    local description="${3:-configuration}"
+    
+    echo ""
+    echo "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo "${CYAN}  Preview: Changes to $(basename "$rc_file")${NC}"
+    echo "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo "${YELLOW}The following $description will be added:${NC}"
+    echo ""
+    echo "${GREEN}$new_content${NC}"
+    echo ""
+    echo "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
+    if ! ui_confirm "Apply these changes to $rc_file?" "y"; then
+        log_warning "Skipped modifications to $rc_file"
+        return 1
+    fi
+    
+    return 0
 }
 
 util_source_env() {
@@ -878,4 +1249,165 @@ util_validate_tool_installed() {
         log_error "$tool is not installed"
         return 1
     fi
+}
+
+# ==============================================================================
+# Common Pattern Abstractions (DRY)
+# ==============================================================================
+
+# Install APT packages with common pattern
+# Usage: util_apt_install "description" package1 package2 ...
+util_apt_install() {
+    local description="$1"
+    shift
+    local packages=("$@")
+    
+    if [[ ${#packages[@]} -eq 0 ]]; then
+        log_error "No packages specified for installation"
+        return 1
+    fi
+    
+    # Filter already installed packages
+    local to_install=()
+    for pkg in "${packages[@]}"; do
+        if ! util_package_installed "$pkg"; then
+            to_install+=("$pkg")
+        else
+            log_debug "Package already installed: $pkg"
+        fi
+    done
+    
+    if [[ ${#to_install[@]} -eq 0 ]]; then
+        log_info "All packages already installed: ${packages[*]}"
+        return 0
+    fi
+    
+    log_info "Installing ${#to_install[@]} package(s): ${to_install[*]}"
+    
+    if ! ui_stream_command "$description" sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${to_install[@]}"; then
+        log_error "Failed to install packages: ${to_install[*]}"
+        return 1
+    fi
+    
+    # Update cache
+    for pkg in "${to_install[@]}"; do
+        PACKAGE_CACHE[$pkg]="installed"
+    done
+    
+    log_success "Installed packages: ${to_install[*]}"
+    return 0
+}
+
+# Clone git repository with automatic cleanup on failure
+# Usage: util_git_clone_safe "repo_url" "dest_dir" "description"
+util_git_clone_safe() {
+    local repo_url="$1"
+    local dest_dir="$2"
+    local description="${3:-repository}"
+    
+    if [[ -d "$dest_dir" ]]; then
+        log_info "$description already cloned at $dest_dir"
+        return 0
+    fi
+    
+    log_info "Cloning $description..."
+    
+    # Set up cleanup trap
+    local cleanup_needed=true
+    trap 'if [[ "$cleanup_needed" == "true" ]] && [[ -d "$dest_dir" ]]; then rm -rf "$dest_dir"; fi' RETURN
+    
+    if ! util_git_clone "$repo_url" "$dest_dir"; then
+        log_error "Failed to clone $description"
+        return 1
+    fi
+    
+    cleanup_needed=false  # Success, don't cleanup
+    log_success "Cloned $description to $dest_dir"
+    return 0
+}
+
+# Run command with progress and capture output
+# Usage: util_run_with_progress "description" command args...
+util_run_with_progress() {
+    local description="$1"
+    shift
+    local cmd=("$@")
+    
+    log_info "$description..."
+    
+    local temp_log
+    temp_log=$(util_create_temp_file)
+    
+    if ui_stream_command "$description" "${cmd[@]}" > "$temp_log" 2>&1; then
+        log_success "$description completed"
+        util_cleanup_single_temp "$temp_log"
+        return 0
+    else
+        log_error "$description failed"
+        log_debug "Last 10 lines of output:"
+        tail -n 10 "$temp_log" | while IFS= read -r line; do
+            log_debug "  $line"
+        done
+        util_cleanup_single_temp "$temp_log"
+        return 1
+    fi
+}
+
+# Download file with retry and progress
+# Usage: util_download_with_retry "url" "output_path" "description" [max_retries]
+util_download_with_retry() {
+    local url="$1"
+    local output="$2"
+    local description="$3"
+    local max_retries="${4:-3}"
+    
+    for ((attempt=1; attempt<=max_retries; attempt++)); do
+        if [[ $attempt -gt 1 ]]; then
+            log_warning "Retry attempt $attempt/$max_retries for $description"
+            sleep 2
+        fi
+        
+        if util_download "$url" "$output" "$description"; then
+            log_success "Downloaded $description"
+            return 0
+        fi
+        
+        if [[ $attempt -lt $max_retries ]]; then
+            log_warning "Download failed, retrying..."
+        fi
+    done
+    
+    log_error "Failed to download $description after $max_retries attempts"
+    return 1
+}
+
+# Extract common progress bar pattern
+# Usage: util_for_each_with_progress "description" callback_func "${array[@]}"
+util_for_each_with_progress() {
+    local description="$1"
+    local callback="$2"
+    shift 2
+    local items=("$@")
+    
+    local total=${#items[@]}
+    local current=0
+    local failed=()
+    
+    for item in "${items[@]}"; do
+        ((current++))
+        ui_progress_bar "$current" "$total" "$description: $item"
+        
+        if ! "$callback" "$item"; then
+            failed+=("$item")
+            log_warning "Failed: $item"
+        fi
+    done
+    
+    if [[ ${#failed[@]} -gt 0 ]]; then
+        log_warning "Failed items ($description): ${failed[*]}"
+        return 1
+    fi
+    
+    log_success "Completed: $description"
+    return 0
 }

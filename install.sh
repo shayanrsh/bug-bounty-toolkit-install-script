@@ -12,6 +12,16 @@
 #
 # ==============================================================================
 
+# Strict error handling
+set -euo pipefail
+
+# Check Bash version (require 4.0+)
+if ((BASH_VERSINFO[0] < 4)); then
+    echo "ERROR: Bash 4.0 or higher is required (you have $BASH_VERSION)"
+    echo "Please upgrade bash: sudo apt-get install bash"
+    exit 1
+fi
+
 set -uo pipefail
 IFS=$'\n\t'
 
@@ -145,17 +155,29 @@ OPTIONS:
     -v, --version           Show version information
     -d, --dry-run          Preview installation without making changes
     -f, --force            Force installation (skip confirmations)
+    -y, --yes              Answer yes to all prompts (non-interactive)
     --full                 Full installation (default)
     --zsh-only             Install ZSH environment only
     --tools-only           Install security tools only
     --go-tools             Install Go-based tools only
     --python-tools         Install Python-based tools only
+    --rust-tools           Install Rust-based tools only
     --wordlists            Install wordlists only
     --profile=PROFILE      Use profile (minimal/full/pentest/developer)
     --update               Update existing tools
     --uninstall            Uninstall all tools
     --resume[=STEP]        Resume a previous run (optional step id)
     --allow-root           Allow running as root (not recommended)
+
+ENVIRONMENT VARIABLES:
+    GO_TOOLS_PARALLEL=true   Enable parallel Go tools installation (faster)
+
+EXAMPLES:
+    ./install.sh                       # Interactive menu
+    ./install.sh --full                # Full installation
+    ./install.sh --yes --full          # Non-interactive full install
+    ./install.sh --dry-run --full      # Preview installation
+    GO_TOOLS_PARALLEL=true ./install.sh --go-tools  # Fast parallel install
 
 EXAMPLES:
     ./install.sh                    # Interactive menu
@@ -188,11 +210,13 @@ parse_arguments() {
             -v|--version) show_version; exit 0 ;;
             -d|--dry-run) DRY_RUN="true"; shift ;;
             -f|--force) FORCE="true"; shift ;;
+            -y|--yes) INTERACTIVE="false"; FORCE="true"; shift ;;
             --full) INSTALL_MODE="full"; shift ;;
             --zsh-only) INSTALL_MODE="zsh"; shift ;;
             --tools-only) INSTALL_MODE="tools"; shift ;;
             --go-tools) INSTALL_MODE="go_tools"; shift ;;
             --python-tools) INSTALL_MODE="python_tools"; shift ;;
+            --rust-tools) INSTALL_MODE="rust_tools"; shift ;;
             --wordlists) INSTALL_MODE="wordlists"; shift ;;
             --custom) INSTALL_MODE="custom"; shift ;;
             --profile=*) PROFILE="${1#*=}"; INSTALL_MODE="profile"; shift ;;
@@ -261,6 +285,24 @@ main() {
     # Initialize logging
     ui_log_init
     config_init_dirs
+    
+    # Load user configuration file if it exists
+    config_load_user_config 2>/dev/null || true
+    
+    # Prevent concurrent installations
+    readonly LOCKFILE="/var/lock/security-tools-installer.lock"
+    exec 200>"$LOCKFILE" 2>/dev/null || {
+        echo "ERROR: Cannot create lockfile (permission denied)"
+        echo "Try: sudo touch $LOCKFILE && sudo chown $(whoami) $LOCKFILE"
+        exit 1
+    }
+    
+    if ! flock -n 200; then
+        echo "ERROR: Installation already running"
+        echo "If you believe this is an error, remove the lockfile:"
+        echo "  sudo rm -f $LOCKFILE"
+        exit 1
+    fi
     
     # Parse command-line arguments
     parse_arguments "$@"

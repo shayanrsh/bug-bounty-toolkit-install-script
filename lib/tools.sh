@@ -34,7 +34,7 @@ tool_install_zsh() {
                 return 1
             }
 
-            if ! ui_stream_command "Updating package lists" sudo apt-get update; then
+            if ! util_apt_update; then
                 log_error "Failed to update package lists"
                 return 1
             fi
@@ -75,8 +75,20 @@ tool_install_zsh() {
     # Set ZSH as default shell (following https://itsfoss.com/zsh-ubuntu/)
     if [[ "$DRY_RUN" == "false" ]] && [[ "$INTERACTIVE" == "true" ]]; then
         if ui_confirm "Set ZSH as default shell?" "y"; then
-            chsh -s /bin/zsh
-            log_success "ZSH set as default shell (restart required)"
+            if chsh -s /bin/zsh; then
+                # Verify ZSH was set as default
+                if grep -q "^$(whoami):" /etc/passwd | grep -q "/bin/zsh"; then
+                    log_success "ZSH successfully set as default shell"
+                else
+                    local current_shell
+                    current_shell=$(getent passwd "$(whoami)" | cut -d: -f7)
+                    log_warning "ZSH set command executed, but current shell is still: $current_shell"
+                    log_info "Please logout and login again for changes to take effect"
+                fi
+                log_info "Restart your terminal or run 'exec zsh' to use ZSH now"
+            else
+                log_error "Failed to set ZSH as default shell"
+            fi
         fi
     fi
     
@@ -355,29 +367,50 @@ tool_install_rust() {
     fi
     
     local rust_installer=$(util_create_temp_file)
+    local rust_checksum=$(util_create_temp_file)
     
-    if curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o "$rust_installer"; then
-        chmod +x "$rust_installer"
-        "$rust_installer" -y --default-toolchain stable &>/dev/null &
-        ui_spinner $! "Installing Rust"
-        rm -f "$rust_installer"
+    # Download installer and checksum
+    if ! curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o "$rust_installer"; then
+        log_error "Failed to download Rust installer"
+        rm -f "$rust_installer" "$rust_checksum"
+        return 1
+    fi
+    
+    if ! curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs.sha256 -o "$rust_checksum" 2>/dev/null; then
+        log_warning "Could not download checksum, skipping verification"
+    else
+        # Verify checksum if available
+        local expected_sum=$(cat "$rust_checksum" | awk '{print $1}')
+        local actual_sum=$(sha256sum "$rust_installer" | awk '{print $1}')
         
-        # Source Rust environment
-        util_source_env "$HOME/.cargo/env"
-        
-        if util_command_exists rustc; then
-            local version=$(util_get_tool_version rustc)
-            log_success "Rust $version installed successfully"
-            util_manifest_add_tool "languages" "rust" "$version" "$HOME/.cargo"
-            rollback_add "tool_uninstall_rust"
-            return 0
-        else
-            log_error "Rust installation verification failed"
+        if [[ "$expected_sum" != "$actual_sum" ]]; then
+            log_error "Checksum verification failed for Rust installer"
+            log_error "Expected: $expected_sum"
+            log_error "Got: $actual_sum"
+            rm -f "$rust_installer" "$rust_checksum"
             return 1
         fi
+        log_success "Checksum verified successfully"
+    fi
+    
+    chmod +x "$rust_installer"
+    "$rust_installer" -y --default-toolchain stable &>/dev/null &
+    ui_spinner $! "Installing Rust"
+    rm -f "$rust_installer" "$rust_checksum"
+    
+    # Source Rust environment
+    util_source_env "$HOME/.cargo/env"
+    
+    if util_command_exists rustc; then
+        local version=$(util_get_tool_version rustc)
+        log_success "Rust $version installed successfully"
+        util_manifest_add_tool "languages" "rust" "$version" "$HOME/.cargo"
+        rollback_add "tool_uninstall_rust"
+        return 0
     else
-        log_error "Failed to download Rust installer"
-        rm -f "$rust_installer"
+        log_error "Rust installation verification failed"
+        return 1
+    fi
         return 1
     fi
 }
@@ -385,6 +418,94 @@ tool_install_rust() {
 tool_uninstall_rust() {
     log_warning "Uninstalling Rust..."
     [[ "$DRY_RUN" == "false" ]] && rustup self uninstall -y
+}
+
+# ==============================================================================
+# Rust Tools Installation Module
+# ==============================================================================
+
+tool_install_rust_tools() {
+    ui_section_header "Installing Rust-based Security Tools" "$CYAN"
+    
+    # Ensure Rust is installed
+    if ! util_command_exists cargo; then
+        log_error "Rust/Cargo is not installed. Installing Rust first..."
+        tool_install_rust || return 1
+    fi
+    
+    # Source Rust environment
+    util_source_env "$HOME/.cargo/env"
+    
+    local failed_tools=()
+    local start_time=$(date +%s)
+    
+    mapfile -t rust_tool_names < <(printf "%s\n" "${!RUST_TOOLS[@]}" | sort)
+    local total=${#rust_tool_names[@]}
+    local current=0
+    
+    log_info "Installing $total Rust-based security tools..."
+    echo ""
+    
+    for tool_pkg in "${rust_tool_names[@]}"; do
+        ((current++))
+        
+        local tool_info="${RUST_TOOLS[$tool_pkg]}"
+        IFS='|' read -r install_method package description <<< "$tool_info"
+        local progress_label="Installing ${tool_pkg}"
+        
+        log_info "[$current/$total] $tool_pkg: $description"
+        
+        if [[ "$DRY_RUN" == "false" ]]; then
+            if ui_run_with_live_progress "$current" "$total" "$progress_label" cargo install "$package"; then
+                local tool_binary="$HOME/.cargo/bin/$tool_pkg"
+                if [[ -f "$tool_binary" ]]; then
+                    local version=$(util_get_tool_version "$tool_pkg" 2>/dev/null || echo "latest")
+                    util_manifest_add_tool "rust_tools" "$tool_pkg" "$version" "$tool_binary"
+                    echo -e "    ${DIM}Binary: $tool_binary${NC}"
+                    echo -e "    ${DIM}Version: $version${NC}"
+                else
+                    log_error "Binary missing after installation: $tool_pkg"
+                    echo -e "    ${RED}✗${NC} Binary not found at $HOME/.cargo/bin/$tool_pkg"
+                    failed_tools+=("$tool_pkg")
+                fi
+            else
+                failed_tools+=("$tool_pkg")
+            fi
+        else
+            log_info "[DRY RUN] Would install: $package via cargo"
+            ui_progress_finalize "$current" "$total" "$current" "$ICON_INFO" "$BLUE" "$progress_label" " ${DIM}[DRY RUN]${NC}"
+        fi
+        
+        echo ""
+    done
+    
+    echo ""
+    
+    # Summary
+    local elapsed=$(($(date +%s) - start_time))
+    local success_count=$((total - ${#failed_tools[@]}))
+    
+    log_info "═══════════════════════════════════════"
+    log_info "Rust Tools Installation Summary:"
+    log_success "  Successful: $success_count/$total tools"
+    if [[ ${#failed_tools[@]} -gt 0 ]]; then
+        log_error "  Failed: ${#failed_tools[@]} tools"
+        log_warning "  Failed tools: ${failed_tools[*]}"
+    fi
+    log_info "  Time elapsed: ${elapsed}s"
+    log_info "═══════════════════════════════════════"
+    
+    rollback_add "tool_uninstall_rust_tools"
+    return 0
+}
+
+tool_uninstall_rust_tools() {
+    log_warning "Removing Rust tools..."
+    if [[ "$DRY_RUN" == "false" ]] && util_command_exists cargo; then
+        for tool in "${!RUST_TOOLS[@]}"; do
+            cargo uninstall "$tool" 2>/dev/null || true
+        done
+    fi
 }
 
 # ==============================================================================
@@ -522,6 +643,34 @@ tool_install_go_tools() {
     if [[ ${#failed_tools[@]} -gt 0 ]]; then
         log_error "  Failed: ${#failed_tools[@]} tools"
         log_warning "  Failed tools: ${failed_tools[*]}"
+        
+        # Offer retry for failed tools
+        if [[ "$INTERACTIVE" == "true" ]] && ui_confirm "Retry failed tools?" "y"; then
+            log_info "Retrying ${#failed_tools[@]} failed tools..."
+            local retry_failed=()
+            
+            for tool_pkg in "${failed_tools[@]}"; do
+                local tool_info="${GO_TOOLS[$tool_pkg]}"
+                local tool_path="${tool_info%%|*}"
+                
+                log_info "Retrying: $tool_pkg"
+                if go install -v "$tool_path" 2>&1 | tee -a "$LOG_FILE"; then
+                    log_success "✓ $tool_pkg installed on retry"
+                    local tool_binary="$(go env GOPATH)/bin/$tool_pkg"
+                    local version=$(util_get_tool_version "$tool_pkg" 2>/dev/null || echo "latest")
+                    util_manifest_add_tool "go_tools" "$tool_pkg" "$version" "$tool_binary"
+                else
+                    log_error "✗ $tool_pkg failed again"
+                    retry_failed+=("$tool_pkg")
+                fi
+            done
+            
+            if [[ ${#retry_failed[@]} -eq 0 ]]; then
+                log_success "All failed tools successfully installed on retry!"
+            else
+                log_warning "Still failed after retry: ${retry_failed[*]}"
+            fi
+        fi
     fi
     log_info "  Time elapsed: ${elapsed}s"
     log_info "═══════════════════════════════════════"
@@ -725,7 +874,7 @@ tool_install_apt_tools() {
             log_error "Unable to acquire APT lock"
             return 1
         }
-        if ! ui_stream_command "Updating package lists" sudo apt-get update; then
+        if ! util_apt_update; then
             log_error "Failed to update package lists"
             return 1
         fi
@@ -744,6 +893,9 @@ tool_install_apt_tools() {
 tool_install_snap_tools() {
     if util_is_wsl; then
         log_warning "WSL detected - snap tools may have limited functionality"
+        log_warning "Skipping snap installations on WSL (systemd required)"
+        ui_info "Snap tools skipped on WSL"
+        return 0
     fi
     
     for tool in "${!SNAP_TOOLS[@]}"; do

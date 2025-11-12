@@ -27,6 +27,17 @@ readonly TOOLS_DIR="${HOME}/tools"
 readonly WORDLISTS_DIR="${HOME}/wordlists"
 readonly SCRIPTS_DIR="${TOOLS_DIR}/scripts"
 
+# Configurable installation prefixes (can be overridden via environment)
+readonly INSTALL_PREFIX="${INSTALL_PREFIX:-/usr/local}"
+readonly GO_INSTALL_DIR="${GO_INSTALL_DIR:-${INSTALL_PREFIX}/go}"
+readonly GO_VERSION_DIR="${GO_VERSION_DIR:-${INSTALL_PREFIX}}"
+readonly CUSTOM_BIN_DIR="${CUSTOM_BIN_DIR:-${HOME}/.local/bin}"
+
+# User-configurable paths (override via environment or config file)
+readonly USER_TOOLS_DIR="${USER_TOOLS_DIR:-${TOOLS_DIR}}"
+readonly USER_WORDLISTS_DIR="${USER_WORDLISTS_DIR:-${WORDLISTS_DIR}}"
+readonly USER_SCRIPTS_DIR="${USER_SCRIPTS_DIR:-${SCRIPTS_DIR}}"
+
 # Colors (ANSI escape codes)
 readonly RED='\033[0;31m'
 readonly GREEN='\033[0;32m'
@@ -66,6 +77,20 @@ readonly RETRY_MAX_ATTEMPTS=3
 readonly RETRY_DELAY=5
 readonly RETRY_BACKOFF_MULTIPLIER=2
 
+# APT and system timeouts (in seconds)
+readonly APT_LOCK_TIMEOUT=300
+readonly APT_LOCK_CHECK_INTERVAL=2
+readonly DOWNLOAD_TIMEOUT=300
+readonly GIT_CLONE_TIMEOUT=600
+
+# Cache configuration
+readonly CACHE_DIR="${HOME}/.security-tools/cache"
+readonly CACHE_MAX_AGE_HOURS=24
+
+# Parallel installation configuration
+readonly DEFAULT_PARALLEL_JOBS=4
+readonly MAX_PARALLEL_JOBS=8
+
 # Global flags (can be overridden by CLI arguments)
 DEBUG=${DEBUG:-false}
 VERBOSE=${VERBOSE:-false}
@@ -79,6 +104,97 @@ INSTALL_MODE=""
 
 # Rollback stack (for tracking installation steps)
 declare -a ROLLBACK_STACK=()
+
+# ==============================================================================
+# Configuration File Loading
+# ==============================================================================
+
+# Load configuration from ~/.security-tools.conf if it exists
+config_load_user_config() {
+    local user_config="${HOME}/.security-tools.conf"
+    
+    if [[ ! -f "$user_config" ]]; then
+        return 0  # No user config, use defaults
+    fi
+    
+    log_info "Loading user configuration from $user_config"
+    
+    # Source the config file in a safe way (only allow specific variables)
+    while IFS='=' read -r key value; do
+        # Skip comments and empty lines
+        [[ "$key" =~ ^#.*$ ]] && continue
+        [[ -z "$key" ]] && continue
+        
+        # Remove leading/trailing whitespace
+        key=$(echo "$key" | xargs)
+        value=$(echo "$value" | xargs)
+        
+        # Only allow specific safe configuration variables
+        case "$key" in
+            SKIP_ZSH_INSTALL|SKIP_GO_INSTALL|SKIP_RUST_INSTALL|SKIP_PYTHON_INSTALL)
+                declare -g "$key=$value"
+                log_debug "Config: $key=$value"
+                ;;
+            CUSTOM_TOOLS_DIR|CUSTOM_WORDLISTS_DIR|CUSTOM_SCRIPTS_DIR)
+                declare -g "$key=$value"
+                log_debug "Config: $key=$value"
+                ;;
+            GO_TOOLS_PARALLEL|PARALLEL_JOBS)
+                declare -g "$key=$value"
+                log_debug "Config: $key=$value"
+                ;;
+            LOG_LEVEL|VERBOSE|DEBUG)
+                declare -g "$key=$value"
+                log_debug "Config: $key=$value"
+                ;;
+            INSTALL_PREFIX|GO_INSTALL_DIR|CUSTOM_BIN_DIR)
+                log_warning "Cannot override readonly path: $key (set via environment before script)"
+                ;;
+            *)
+                log_warning "Unknown configuration key: $key"
+                ;;
+        esac
+    done < "$user_config"
+    
+    log_success "User configuration loaded"
+}
+
+# Create example configuration file
+config_create_example() {
+    local example_config="${HOME}/.security-tools.conf.example"
+    
+    cat > "$example_config" << 'EOF'
+# Security Tools Installer Configuration
+# Copy this file to ~/.security-tools.conf and customize as needed
+
+# Skip specific installation categories
+#SKIP_ZSH_INSTALL=false
+#SKIP_GO_INSTALL=false
+#SKIP_RUST_INSTALL=false
+#SKIP_PYTHON_INSTALL=false
+
+# Custom installation directories
+#CUSTOM_TOOLS_DIR=/opt/security-tools
+#CUSTOM_WORDLISTS_DIR=/opt/wordlists
+#CUSTOM_SCRIPTS_DIR=/opt/scripts
+
+# Performance settings
+#GO_TOOLS_PARALLEL=true
+#PARALLEL_JOBS=4
+
+# Logging and debug
+#LOG_LEVEL=INFO  # TRACE, DEBUG, INFO, WARNING, ERROR
+#VERBOSE=true
+#DEBUG=false
+
+# Note: Installation paths (INSTALL_PREFIX, GO_INSTALL_DIR, etc.) 
+# must be set via environment variables before running the script:
+#   export INSTALL_PREFIX=/opt
+#   ./install.sh --full
+EOF
+    
+    log_success "Created example configuration: $example_config"
+}
 
 # ==============================================================================
 # Tool Definitions - Modular Plugin System

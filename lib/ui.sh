@@ -23,8 +23,22 @@ ui_log_init() {
         echo "Home: $HOME"
         echo "OS: $(lsb_release -d 2>/dev/null | cut -f2 || echo 'Unknown')"
         echo "Kernel: $(uname -r)"
+        echo "Log Level: ${LOG_LEVEL:-INFO}"
         echo "======================================================================"
     } > "$LOG_FILE"
+}
+
+# Logging levels: TRACE=0, DEBUG=1, INFO=2, WARNING=3, ERROR=4
+declare -A LOG_LEVELS=([TRACE]=0 [DEBUG]=1 [INFO]=2 [WARNING]=3 [ERROR]=4)
+LOG_LEVEL="${LOG_LEVEL:-INFO}"
+
+# Check if message should be logged based on level
+_should_log() {
+    local msg_level="$1"
+    local current_level="${LOG_LEVELS[$LOG_LEVEL]:-2}"
+    local message_level="${LOG_LEVELS[$msg_level]:-2}"
+    
+    [[ $message_level -ge $current_level ]]
 }
 
 # Generic log message function
@@ -36,8 +50,13 @@ _log_message() {
     local timestamp
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     
+    # Check if we should log this level
+    if ! _should_log "$level"; then
+        return 0
+    fi
+    
     # Console output (colored)
-    if [[ "$VERBOSE" == "true" ]] || [[ "$level" != "DEBUG" ]]; then
+    if [[ "$VERBOSE" == "true" ]] || [[ "$level" != "DEBUG" && "$level" != "TRACE" ]]; then
         echo -e "${color}${icon} [${level}] ${timestamp}${NC} ${message}"
     fi
     
@@ -45,7 +64,8 @@ _log_message() {
     echo "[${level}] ${timestamp} ${message}" >> "$LOG_FILE"
 }
 
-log_debug()   { [[ "$DEBUG" == "true" ]] && _log_message "DEBUG"   "$PURPLE" "$ICON_DEBUG"   "$1"; }
+log_trace()   { _log_message "TRACE"   "$GRAY"   "→"             "$1"; }
+log_debug()   { _log_message "DEBUG"   "$PURPLE" "$ICON_DEBUG"   "$1"; }
 log_info()    { _log_message "INFO"    "$BLUE"   "$ICON_INFO"    "$1"; }
 log_success() { _log_message "SUCCESS" "$GREEN"  "$ICON_SUCCESS" "$1"; }
 log_warning() { _log_message "WARNING" "$YELLOW" "$ICON_WARNING" "$1"; }
@@ -179,6 +199,70 @@ ui_draw_live_progress() {
 
     printf "\r\033[K${CYAN}[${bar_color}%s${YELLOW}%s${CYAN}%s${NC}] %3d%% (%d/%d) ${YELLOW}%s${NC} %s%s" \
         "$filled_bar" "$pulse_bar" "$empty_bar" "$percentage" "$step_index" "$safe_total" "$spinner_char" "$message" "$status_text"
+}
+
+# Nested progress bar - shows parent and child progress
+# Usage: ui_progress_nested "parent_text" parent_current parent_total "child_text" child_current child_total
+ui_progress_nested() {
+    local parent_text="$1"
+    local parent_current="$2"
+    local parent_total="$3"
+    local child_text="$4"
+    local child_current="$5"
+    local child_total="$6"
+    
+    # Calculate percentages
+    local safe_parent_total=$((parent_total > 0 ? parent_total : 1))
+    local safe_child_total=$((child_total > 0 ? child_total : 1))
+    
+    local parent_pct=$((parent_current * 100 / safe_parent_total))
+    local child_pct=$((child_current * 100 / safe_child_total))
+    
+    # Parent progress bar (abbreviated)
+    local parent_width=30
+    local parent_filled=$((parent_current * parent_width / safe_parent_total))
+    ((parent_filled > parent_width)) && parent_filled=$parent_width
+    local parent_empty=$((parent_width - parent_filled))
+    
+    local parent_bar=""
+    ((parent_filled > 0)) && parent_bar=$(printf "█%.0s" $(seq 1 "$parent_filled" 2>/dev/null))
+    local parent_empty_bar=""
+    ((parent_empty > 0)) && parent_empty_bar=$(printf "░%.0s" $(seq 1 "$parent_empty" 2>/dev/null))
+    
+    # Child progress bar (full width)
+    local child_width=$PROGRESS_BAR_WIDTH
+    local child_filled=$((child_current * child_width / safe_child_total))
+    ((child_filled > child_width)) && child_filled=$child_width
+    local child_empty=$((child_width - child_filled))
+    
+    local child_bar=""
+    ((child_filled > 0)) && child_bar=$(printf "█%.0s" $(seq 1 "$child_filled" 2>/dev/null))
+    local child_empty_bar=""
+    ((child_empty > 0)) && child_empty_bar=$(printf "░%.0s" $(seq 1 "$child_empty" 2>/dev/null))
+    
+    # Color based on progress
+    local child_color="$RED"
+    [[ $child_pct -ge 75 ]] && child_color="$GREEN"
+    [[ $child_pct -ge 50 && $child_pct -lt 75 ]] && child_color="$YELLOW"
+    [[ $child_pct -ge 25 && $child_pct -lt 50 ]] && child_color="$BLUE"
+    
+    # Display nested progress
+    # Line 1: Parent progress
+    printf "\r\033[K${GRAY}[${GREEN}%s${GRAY}%s] %3d%% %s${NC}\n" \
+           "$parent_bar" "$parent_empty_bar" "$parent_pct" "$parent_text"
+    
+    # Line 2: Child progress with indentation
+    printf "\r\033[K  ${CYAN}└─[${child_color}%s${CYAN}%s] %3d%% (%d/%d)${NC} %s" \
+           "$child_bar" "$child_empty_bar" "$child_pct" "$child_current" "$child_total" "$child_text"
+    
+    # Move cursor up 1 line for next update
+    printf "\033[1A"
+}
+
+# Clear nested progress (move down and clear both lines)
+ui_progress_nested_clear() {
+    printf "\033[1B"  # Move down
+    printf "\r\033[K\n\033[K"  # Clear both lines
 }
 
 # Finalise progress output for a completed or failed task
@@ -508,6 +592,11 @@ ui_confirm() {
     local default="${2:-n}"
     local response
     
+    # Auto-accept if force flag is set
+    if [[ "$FORCE" == "true" ]]; then
+        return 0
+    fi
+    
     if [[ "$INTERACTIVE" == "false" ]]; then
         echo "$default"
         return 0
@@ -586,8 +675,40 @@ ui_show_error() {
     fi
     
     echo -e "${RED}│                                                                          │${NC}"
+    echo -e "${RED}│${NC} ${CYAN}Log file: ${LOG_FILE}${NC}"
+    echo -e "${RED}│${NC} ${CYAN}Run with: LOG_LEVEL=DEBUG for more details${NC}"
+    echo -e "${RED}│                                                                          │${NC}"
     echo -e "${RED}╰──────────────────────────────────────────────────────────────────────────╯${NC}"
     echo
+}
+
+ui_error_network() {
+    local component="$1"
+    ui_show_error \
+        "Network error downloading $component" \
+        "Check internet connection. Try: ping google.com | Verify firewall settings | Use VPN if behind restrictive network"
+}
+
+ui_error_disk_space() {
+    local required="$1"
+    local available="$2"
+    ui_show_error \
+        "Insufficient disk space (need ${required}GB, have ${available}GB)" \
+        "Free up space: sudo apt-get clean | Remove old logs: journalctl --vacuum-time=7d | Check: df -h"
+}
+
+ui_error_permission() {
+    local operation="$1"
+    ui_show_error \
+        "Permission denied: $operation" \
+        "Ensure you're not running as root (use regular user) | Check file permissions: ls -la | Try: sudo chmod +x install.sh"
+}
+
+ui_error_dependency() {
+    local missing="$1"
+    ui_show_error \
+        "Missing dependency: $missing" \
+        "Install with: sudo apt-get install $missing | Or run: sudo apt-get update && sudo apt-get install -y curl wget git"
 }
 
 ui_show_completion() {
@@ -600,6 +721,108 @@ ui_show_completion() {
     echo -e "${CYAN}│${NC} ${GREEN}✓${NC} All components have been successfully installed                     ${CYAN}│${NC}"
     echo -e "${CYAN}│${NC} ${GREEN}✓${NC} Configuration files have been updated                               ${CYAN}│${NC}"
     echo -e "${CYAN}│${NC} ${GREEN}✓${NC} Manifest file has been generated                                    ${CYAN}│${NC}"
+    echo -e "${CYAN}│                                                                          │${NC}"
+    echo -e "${CYAN}╰──────────────────────────────────────────────────────────────────────────╯${NC}"
+    echo
+}
+
+# ==============================================================================
+# Installation Plan Preview
+# ==============================================================================
+
+ui_show_installation_plan() {
+    local mode="$1"
+    
+    echo
+    ui_section_header "Installation Plan" "$CYAN"
+    echo
+    echo -e "${YELLOW}╭─ What Will Be Installed ─────────────────────────────────────╮${NC}"
+    echo -e "${YELLOW}│${NC} Mode: ${CYAN}$(tr '[:lower:]' '[:upper:]' <<< ${mode:0:1})${mode:1}${NC}"
+    echo -e "${YELLOW}│${NC}"
+    
+    case "$mode" in
+        full)
+            echo -e "${YELLOW}│${NC} Components:"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} ZSH + Oh My ZSH + Powerlevel10k"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} Go programming language"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} Rust programming language"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} ${#GO_TOOLS[@]} Go-based security tools"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} ${#PYTHON_TOOLS[@]} Python-based tools"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} ${#RUST_TOOLS[@]} Rust-based tools"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} ${#APT_TOOLS[@]} system packages"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} ${#WORDLISTS[@]} wordlist collections"
+            echo -e "${YELLOW}│${NC}"
+            echo -e "${YELLOW}│${NC} Estimates:"
+            echo -e "${YELLOW}│${NC}  Disk Space: ${CYAN}~3.5 GB${NC}"
+            echo -e "${YELLOW}│${NC}  Download: ${CYAN}~2.8 GB${NC}"
+            echo -e "${YELLOW}│${NC}  Time: ${CYAN}10-15 minutes${NC}"
+            ;;
+        zsh)
+            echo -e "${YELLOW}│${NC} Components:"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} ZSH shell"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} Oh My ZSH framework"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} Powerlevel10k theme"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} Plugins: git, zsh-syntax-highlighting, zsh-autosuggestions"
+            echo -e "${YELLOW}│${NC}"
+            echo -e "${YELLOW}│${NC} Estimates:"
+            echo -e "${YELLOW}│${NC}  Disk Space: ${CYAN}~50 MB${NC}"
+            echo -e "${YELLOW}│${NC}  Download: ${CYAN}~25 MB${NC}"
+            echo -e "${YELLOW}│${NC}  Time: ${CYAN}2-3 minutes${NC}"
+            ;;
+        go_tools)
+            echo -e "${YELLOW}│${NC} Components:"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} Go programming language"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} ${#GO_TOOLS[@]} Go-based security tools"
+            echo -e "${YELLOW}│${NC}"
+            echo -e "${YELLOW}│${NC} Estimates:"
+            echo -e "${YELLOW}│${NC}  Disk Space: ${CYAN}~1.2 GB${NC}"
+            echo -e "${YELLOW}│${NC}  Download: ${CYAN}~800 MB${NC}"
+            echo -e "${YELLOW}│${NC}  Time: ${CYAN}3-5 minutes${NC}"
+            ;;
+        python_tools)
+            echo -e "${YELLOW}│${NC} Components:"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} Python virtual environment"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} ${#PYTHON_TOOLS[@]} Python-based security tools"
+            echo -e "${YELLOW}│${NC}"
+            echo -e "${YELLOW}│${NC} Estimates:"
+            echo -e "${YELLOW}│${NC}  Disk Space: ${CYAN}~500 MB${NC}"
+            echo -e "${YELLOW}│${NC}  Download: ${CYAN}~300 MB${NC}"
+            echo -e "${YELLOW}│${NC}  Time: ${CYAN}2-4 minutes${NC}"
+            ;;
+        rust_tools)
+            echo -e "${YELLOW}│${NC} Components:"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} Rust programming language"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} ${#RUST_TOOLS[@]} Rust-based security tools"
+            echo -e "${YELLOW}│${NC}"
+            echo -e "${YELLOW}│${NC} Estimates:"
+            echo -e "${YELLOW}│${NC}  Disk Space: ${CYAN}~400 MB${NC}"
+            echo -e "${YELLOW}│${NC}  Download: ${CYAN}~250 MB${NC}"
+            echo -e "${YELLOW}│${NC}  Time: ${CYAN}3-5 minutes${NC}"
+            ;;
+        wordlists)
+            echo -e "${YELLOW}│${NC} Components:"
+            echo -e "${YELLOW}│${NC}  ${GREEN}✓${NC} ${#WORDLISTS[@]} wordlist collections"
+            echo -e "${YELLOW}│${NC}"
+            echo -e "${YELLOW}│${NC} Estimates:"
+            echo -e "${YELLOW}│${NC}  Disk Space: ${CYAN}~1.5 GB${NC}"
+            echo -e "${YELLOW}│${NC}  Download: ${CYAN}~1.2 GB${NC}"
+            echo -e "${YELLOW}│${NC}  Time: ${CYAN}3-6 minutes${NC}"
+            ;;
+    esac
+    
+    echo -e "${YELLOW}│${NC}"
+    echo -e "${YELLOW}│${NC} Installation Locations:"
+    echo -e "${YELLOW}│${NC}  Tools: ${CYAN}${TOOLS_DIR}${NC}"
+    echo -e "${YELLOW}│${NC}  Wordlists: ${CYAN}${WORDLISTS_DIR}${NC}"
+    echo -e "${YELLOW}│${NC}  Log: ${CYAN}${LOG_FILE}${NC}"
+    echo -e "${YELLOW}│${NC}  Manifest: ${CYAN}${MANIFEST_FILE}${NC}"
+    echo -e "${YELLOW}╰──────────────────────────────────────────────────────────────╯${NC}"
+    echo
+    
+    if [[ "$INTERACTIVE" == "true" ]] && [[ "$FORCE" != "true" ]]; then
+        ui_confirm "Proceed with installation?" "y" || exit 0
+    fi
+}
     echo -e "${CYAN}│                                                                          │${NC}"
     echo -e "${CYAN}╰──────────────────────────────────────────────────────────────────────────╯${NC}"
     echo

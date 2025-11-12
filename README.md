@@ -10,11 +10,34 @@
 
 ## ⚡ Quick Install
 
+### Method 1: Direct Download with Verification (Recommended)
+
+Safer approach with checksum verification:
+
+```bash
+# Download the install script
+curl -Ls https://raw.githubusercontent.com/shayanrsh/bug-bounty-toolkit-install-script/main/install.sh -o install.sh
+
+# Optional: Verify checksum (recommended for production)
+# Get the expected checksum from the repository releases page
+# sha256sum -c <<< "EXPECTED_CHECKSUM  install.sh"
+
+# Make executable and run
+chmod +x install.sh
+./install.sh
+```
+
+### Method 2: Quick Install (Convenient)
+
 Install everything with a single command:
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/shayanrsh/bug-bounty-toolkit-install-script/main/install.sh)
 ```
+
+**Security Note**: This method pipes code directly to bash. While convenient, it's vulnerable to MITM attacks. Use Method 1 for production systems.
+
+### Method 3: Clone Repository (Most Secure)
 
 Or download and run manually:
 

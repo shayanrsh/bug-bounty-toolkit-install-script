@@ -11,21 +11,82 @@
 # Rollback Management
 # ==============================================================================
 
+# Granular rollback support with per-tool tracking
+declare -A ROLLBACK_TOOLS=()  # Maps tool names to rollback functions
+
 rollback_add() {
     local function_name="$1"
     ROLLBACK_STACK+=("$function_name")
     log_debug "Added to rollback stack: $function_name"
 }
 
+# Add per-tool rollback handler
+rollback_add_tool() {
+    local tool_name="$1"
+    local rollback_func="$2"
+    ROLLBACK_TOOLS["$tool_name"]="$rollback_func"
+    log_debug "Added tool rollback: $tool_name -> $rollback_func"
+}
+
+# Rollback specific tool
+rollback_tool() {
+    local tool_name="$1"
+    
+    if [[ -z "${ROLLBACK_TOOLS[$tool_name]}" ]]; then
+        log_warning "No rollback handler for tool: $tool_name"
+        return 1
+    fi
+    
+    local func="${ROLLBACK_TOOLS[$tool_name]}"
+    log_info "Rolling back tool: $tool_name"
+    
+    if declare -f "$func" >/dev/null; then
+        "$func" || log_error "Rollback failed for $tool_name"
+    else
+        log_error "Rollback function not found: $func"
+        return 1
+    fi
+    
+    unset ROLLBACK_TOOLS["$tool_name"]
+    log_success "Rolled back: $tool_name"
+}
+
+# Rollback multiple specific tools
+rollback_tools() {
+    local tools=("$@")
+    local failed=()
+    
+    for tool in "${tools[@]}"; do
+        if ! rollback_tool "$tool"; then
+            failed+=("$tool")
+        fi
+    done
+    
+    if [[ ${#failed[@]} -gt 0 ]]; then
+        log_warning "Failed to rollback: ${failed[*]}"
+        return 1
+    fi
+    
+    return 0
+}
+
 rollback_execute() {
-    if [[ ${#ROLLBACK_STACK[@]} -eq 0 ]]; then
+    if [[ ${#ROLLBACK_STACK[@]} -eq 0 ]] && [[ ${#ROLLBACK_TOOLS[@]} -eq 0 ]]; then
         log_info "No rollback actions needed"
         return 0
     fi
     
     log_warning "Executing rollback..."
     
-    # Execute in reverse order
+    # Rollback all registered tools first
+    if [[ ${#ROLLBACK_TOOLS[@]} -gt 0 ]]; then
+        log_info "Rolling back ${#ROLLBACK_TOOLS[@]} tools..."
+        for tool in "${!ROLLBACK_TOOLS[@]}"; do
+            rollback_tool "$tool" || true  # Continue on errors
+        done
+    fi
+    
+    # Execute general rollback stack in reverse order
     for ((i=${#ROLLBACK_STACK[@]}-1; i>=0; i--)); do
         local func="${ROLLBACK_STACK[$i]}"
         log_info "Rolling back: $func"
@@ -38,11 +99,13 @@ rollback_execute() {
     done
     
     ROLLBACK_STACK=()
+    ROLLBACK_TOOLS=()
     log_success "Rollback completed"
 }
 
 rollback_clear() {
     ROLLBACK_STACK=()
+    ROLLBACK_TOOLS=()
     log_debug "Rollback stack cleared"
 }
 
@@ -126,12 +189,16 @@ core_pre_install_checks() {
 core_install_full() {
     log_info "Starting full installation..."
     
+    # Show installation plan preview
+    ui_show_installation_plan "full"
+    
     local steps=(
         "tool_install_zsh:ZSH + Oh My ZSH"
         "tool_install_go:Go Programming Language"
         "tool_install_rust:Rust Programming Language"
         "tool_install_go_tools:Go Security Tools"
         "tool_install_python_tools:Python Security Tools"
+        "tool_install_rust_tools:Rust Security Tools"
         "tool_install_apt_tools:APT Tools"
         "tool_install_snap_tools:Snap Tools"
         "tool_install_pipx_tools:Pipx Tools"
