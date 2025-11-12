@@ -106,6 +106,168 @@ ui_progress_with_spinner() {
            "$filled_bar" "$empty_bar" "$percentage" "$current" "$total" "$spinner_char" "$message"
 }
 
+# Render live progress line with animated pulse for the active task
+ui_draw_live_progress() {
+    local step_index="$1"
+    local total="$2"
+    local tick="$3"
+    local spinner_char="$4"
+    local message="$5"
+    local status_text="${6:-}"
+
+    local safe_total=$(( total > 0 ? total : 1 ))
+    local completed_steps=$((step_index - 1))
+    ((completed_steps < 0)) && completed_steps=0
+    ((completed_steps > safe_total)) && completed_steps=safe_total
+
+    local filled_width=$((completed_steps * PROGRESS_BAR_WIDTH / safe_total))
+    ((filled_width > PROGRESS_BAR_WIDTH)) && filled_width=$PROGRESS_BAR_WIDTH
+
+    local unit_width=$((PROGRESS_BAR_WIDTH / safe_total))
+    ((unit_width < 1)) && unit_width=1
+
+    local available=$((PROGRESS_BAR_WIDTH - filled_width))
+    local pulse_width=0
+    if ((available > 0)); then
+        pulse_width=$(( (tick % unit_width) + 1 ))
+        ((pulse_width > available)) && pulse_width=$available
+    fi
+
+    local empty_width=$((PROGRESS_BAR_WIDTH - filled_width - pulse_width))
+    ((empty_width < 0)) && empty_width=0
+
+    local filled_bar=""
+    if ((filled_width > 0)); then
+        printf -v filled_bar "%*s" "$filled_width" ""
+        filled_bar=${filled_bar// /█}
+    fi
+
+    local pulse_bar=""
+    if ((pulse_width > 0)); then
+        printf -v pulse_bar "%*s" "$pulse_width" ""
+        pulse_bar=${pulse_bar// /▒}
+    fi
+
+    local empty_bar=""
+    if ((empty_width > 0)); then
+        printf -v empty_bar "%*s" "$empty_width" ""
+        empty_bar=${empty_bar// /░}
+    fi
+
+    local percentage=$(( (filled_width + pulse_width) * 100 / PROGRESS_BAR_WIDTH ))
+    if ((percentage > 99)) && ((completed_steps < safe_total)); then
+        percentage=99
+    fi
+
+    local bar_color="$RED"
+    [[ $percentage -ge 75 ]] && bar_color="$GREEN"
+    [[ $percentage -ge 50 && $percentage -lt 75 ]] && bar_color="$YELLOW"
+    [[ $percentage -ge 25 && $percentage -lt 50 ]] && bar_color="$BLUE"
+
+    printf "\r\033[K${CYAN}[${bar_color}%s${YELLOW}%s${CYAN}%s${NC}] %3d%% (%d/%d) ${YELLOW}%s${NC} %s%s" \
+        "$filled_bar" "$pulse_bar" "$empty_bar" "$percentage" "$step_index" "$safe_total" "$spinner_char" "$message" "$status_text"
+}
+
+# Finalise progress output for a completed or failed task
+ui_progress_finalize() {
+    local step_index="$1"
+    local total="$2"
+    local completed_steps="$3"
+    local icon="$4"
+    local color="$5"
+    local message="$6"
+    local status_text="${7:-}"
+
+    local safe_total=$(( total > 0 ? total : 1 ))
+    ((completed_steps < 0)) && completed_steps=0
+    ((completed_steps > safe_total)) && completed_steps=safe_total
+
+    local filled_width=$((completed_steps * PROGRESS_BAR_WIDTH / safe_total))
+    ((filled_width > PROGRESS_BAR_WIDTH)) && filled_width=$PROGRESS_BAR_WIDTH
+    local empty_width=$((PROGRESS_BAR_WIDTH - filled_width))
+    ((empty_width < 0)) && empty_width=0
+
+    local filled_bar=""
+    if ((filled_width > 0)); then
+        printf -v filled_bar "%*s" "$filled_width" ""
+        filled_bar=${filled_bar// /█}
+    fi
+
+    local empty_bar=""
+    if ((empty_width > 0)); then
+        printf -v empty_bar "%*s" "$empty_width" ""
+        empty_bar=${empty_bar// /░}
+    fi
+
+    local percentage=$((completed_steps * 100 / safe_total))
+
+    printf "\r\033[K${CYAN}[${color}%s${CYAN}%s${NC}] %3d%% (%d/%d) ${color}%s${NC} %s%s\n" \
+        "$filled_bar" "$empty_bar" "$percentage" "$step_index" "$safe_total" "$icon" "$message" "$status_text"
+}
+
+# Execute a command while rendering a live progress indicator
+ui_run_with_live_progress() {
+    local step_index="$1"
+    local total="$2"
+    local message="$3"
+    shift 3
+    local command=("$@")
+
+    if [[ ${#command[@]} -eq 0 ]]; then
+        log_error "ui_run_with_live_progress called without a command"
+        return 1
+    fi
+
+    local safe_total=$(( total > 0 ? total : 1 ))
+    local temp_log
+    temp_log=$(mktemp -t security-tools-XXXXXX)
+    local start_time=$(date +%s)
+
+    if command -v stdbuf &>/dev/null; then
+        stdbuf -oL -eL "${command[@]}" >"$temp_log" 2>&1 &
+    else
+        "${command[@]}" >"$temp_log" 2>&1 &
+    fi
+
+    local pid=$!
+    local tick=0
+    local spinner_length=${#SPINNER_CHARS}
+
+    while kill -0 "$pid" 2>/dev/null; do
+        local spinner_char="${SPINNER_CHARS:$((tick % spinner_length)):1}"
+        local elapsed=$(( $(date +%s) - start_time ))
+        local last_line=""
+        if [[ -s "$temp_log" ]]; then
+            last_line=$(tail -n1 "$temp_log" | tr -d '\r')
+            last_line=${last_line//$'\t'/ }
+            last_line=$(printf "%.48s" "$last_line")
+            [[ -n "$last_line" ]] && last_line=" ${DIM}| ${last_line}${NC}"
+        fi
+        local status_text=" ${DIM}[${elapsed}s]${NC}${last_line}"
+        ui_draw_live_progress "$step_index" "$safe_total" "$tick" "$spinner_char" "$message" "$status_text"
+        tick=$((tick + 1))
+        sleep 0.15
+    done
+
+    wait "$pid"
+    local exit_code=$?
+    local elapsed_total=$(( $(date +%s) - start_time ))
+    cat "$temp_log" >> "$LOG_FILE"
+
+    if [[ $exit_code -eq 0 ]]; then
+        ui_progress_finalize "$step_index" "$safe_total" "$step_index" "$ICON_SUCCESS" "$GREEN" "$message" " ${DIM}[${elapsed_total}s]${NC}"
+    else
+        ui_progress_finalize "$step_index" "$safe_total" $((step_index - 1)) "$ICON_ERROR" "$RED" "$message" " ${DIM}[${elapsed_total}s]${NC}"
+        if [[ -s "$temp_log" ]]; then
+            echo -e "${YELLOW}─ Last 10 lines ─${NC}"
+            tail -n 10 "$temp_log"
+        fi
+    fi
+
+    rm -f "$temp_log"
+    return $exit_code
+}
+
 # Spinner for background operations
 ui_spinner() {
     local pid=$1

@@ -413,27 +413,27 @@ tool_uninstall_rust() {
 
 tool_install_go_tools() {
     ui_section_header "Installing Go-based Security Tools" "$GREEN"
-    
+
     # Ensure Go is installed
     if ! util_command_exists go; then
         log_error "Go is not installed. Installing Go first..."
         tool_install_go || return 1
     fi
-    
+
     # Ensure Go environment is set up
     util_setup_go_env
-    
+
     # Install system dependencies for specific tools
     log_info "Checking system dependencies..."
     local deps_needed=()
-    
+
     # naabu requires libpcap
     if [[ -n "${GO_TOOLS[naabu]}" ]]; then
         if ! dpkg -l | grep -q libpcap-dev; then
             deps_needed+=("libpcap-dev")
         fi
     fi
-    
+
     # Install dependencies if needed
     if [[ ${#deps_needed[@]} -gt 0 ]]; then
         log_info "Installing system dependencies: ${deps_needed[*]}"
@@ -442,79 +442,57 @@ tool_install_go_tools() {
             log_warning "Some dependencies may have failed (continuing...)"
         fi
     fi
-    
-    local total=${#GO_TOOLS[@]}
-    local current=0
+
     local failed_tools=()
     local start_time=$(date +%s)
-    
+
+    mapfile -t go_tool_names < <(printf "%s\n" "${!GO_TOOLS[@]}" | sort)
+    local total=${#go_tool_names[@]}
+    local current=0
+
     log_info "Installing $total Go-based security tools..."
     echo ""
-    
-    for tool_pkg in "${!GO_TOOLS[@]}"; do
+
+    for tool_pkg in "${go_tool_names[@]}"; do
         ((current++))
-        
+
         local tool_info="${GO_TOOLS[$tool_pkg]}"
         local tool_path="${tool_info%%|*}"
         local description="${tool_info##*|}"
-        
-        # Show progress header
-        local percent=$((current * 100 / total))
-        local filled=$((percent * 50 / 100))
-        local empty=$((50 - filled))
-        
-        # Generate progress bar characters
-        local filled_bar=$(printf "█%.0s" $(seq 1 "$filled" 2>/dev/null))
-        local empty_bar=$(printf "░%.0s" $(seq 1 "$empty" 2>/dev/null))
-        
-        # Color based on percentage
-        local bar_color="$RED"
-        [[ $percent -ge 75 ]] && bar_color="$GREEN"
-        [[ $percent -ge 50 && $percent -lt 75 ]] && bar_color="$YELLOW"
-        [[ $percent -ge 25 && $percent -lt 50 ]] && bar_color="$BLUE"
-        
-        printf "\n${CYAN}[${bar_color}%s${CYAN}%s${NC}] %3d%% (%d/%d) ${YELLOW}⚙${NC}  Installing ${CYAN}%s${NC}...\n" \
-            "$filled_bar" "$empty_bar" "$percent" "$current" "$total" "$tool_pkg"
-        
+        local progress_label="Installing ${tool_pkg}"
+
         log_info "[$current/$total] $tool_pkg: $description"
-        
+
         if [[ "$DRY_RUN" == "false" ]]; then
-            # Install with real-time verbose output
-            echo -e "  ${DIM}↓ Downloading and compiling...${NC}"
-            
-            local install_success=true
-            go install -v "$tool_path" 2>&1 | while IFS= read -r line; do
-                # Show download and compilation progress
-                if [[ "$line" =~ "go: downloading" ]]; then
-                    echo -e "    ${BLUE}↓${NC} ${DIM}${line}${NC}"
-                elif [[ "$line" =~ "# " ]]; then
-                    echo -e "    ${YELLOW}⚙${NC} ${DIM}${line}${NC}"
+            if ui_run_with_live_progress "$current" "$total" "$progress_label" go install -v "$tool_path"; then
+                local tool_binary="$(go env GOPATH)/bin/$tool_pkg"
+                if [[ -f "$tool_binary" ]]; then
+                    local version=$(util_get_tool_version "$tool_pkg" 2>/dev/null || echo "latest")
+                    util_manifest_add_tool "go_tools" "$tool_pkg" "$version" "$tool_binary"
+                    echo -e "    ${DIM}Binary: $tool_binary${NC}"
+                    echo -e "    ${DIM}Version: $version${NC}"
+                else
+                    log_error "Binary missing after installation: $tool_pkg"
+                    echo -e "    ${RED}✗${NC} Binary not found at $(go env GOPATH)/bin/$tool_pkg"
+                    failed_tools+=("$tool_pkg")
                 fi
-            done
-            
-            local install_result=${PIPESTATUS[0]}
-            
-            # Check if tool was installed
-            local tool_binary="$(go env GOPATH)/bin/$tool_pkg"
-            if [[ -f "$tool_binary" ]] && [[ $install_result -eq 0 ]]; then
-                echo -e "  ${GREEN}✓${NC} Successfully installed ${CYAN}$tool_pkg${NC}"
-                local version=$(util_get_tool_version "$tool_pkg" 2>/dev/null || echo "latest")
-                util_manifest_add_tool "go_tools" "$tool_pkg" "$version" "$tool_binary"
             else
-                echo -e "  ${RED}✗${NC} Failed to install $tool_pkg"
                 failed_tools+=("$tool_pkg")
             fi
         else
-            echo -e "  ${DIM}[DRY RUN] Would install: $tool_pkg ($tool_path)${NC}"
+            log_info "[DRY RUN] Would install: $tool_path"
+            ui_progress_finalize "$current" "$total" "$current" "$ICON_INFO" "$BLUE" "$progress_label" " ${DIM}[DRY RUN]${NC}"
         fi
+
+        echo ""
     done
-    
+
     echo ""
-    
+
     # Summary
     local elapsed=$(($(date +%s) - start_time))
     local success_count=$((total - ${#failed_tools[@]}))
-    
+
     log_info "═══════════════════════════════════════"
     log_info "Installation Summary:"
     log_success "  Successful: $success_count/$total tools"
@@ -524,7 +502,7 @@ tool_install_go_tools() {
     fi
     log_info "  Time elapsed: ${elapsed}s"
     log_info "═══════════════════════════════════════"
-    
+
     rollback_add "tool_uninstall_go_tools"
     return 0
 }
