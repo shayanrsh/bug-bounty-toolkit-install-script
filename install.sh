@@ -19,12 +19,44 @@ IFS=$'\n\t'
 # Source Library Modules
 # ==============================================================================
 
+# Detect if script is being run from curl pipe
+SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+if [[ "$SCRIPT_SOURCE" == *"/dev/fd/"* ]] || [[ "$SCRIPT_SOURCE" == "/proc/self/fd/"* ]]; then
+    # Script is being piped from curl, need to clone the repository
+    echo "Detected installation via curl, cloning repository..."
+    
+    INSTALL_DIR="/tmp/bug-bounty-toolkit-$$"
+    REPO_URL="https://github.com/shayanrsh/bug-bounty-toolkit-install-script.git"
+    
+    # Check if git is installed
+    if ! command -v git &> /dev/null; then
+        echo "Installing git..."
+        sudo apt-get update -qq && sudo apt-get install -y git -qq
+    fi
+    
+    # Clone repository to temp directory
+    git clone -q "$REPO_URL" "$INSTALL_DIR" 2>/dev/null || {
+        echo "ERROR: Failed to clone repository"
+        exit 1
+    }
+    
+    # Change to install directory and run the script
+    cd "$INSTALL_DIR" || exit 1
+    exec bash install.sh "$@"
+    exit 0
+fi
+
+# Normal execution from downloaded repository
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="${SCRIPT_DIR}/lib"
 
 # Check if lib directory exists
 if [[ ! -d "$LIB_DIR" ]]; then
     echo "ERROR: Library directory not found: $LIB_DIR"
+    echo "Please clone the full repository:"
+    echo "  git clone https://github.com/shayanrsh/bug-bounty-toolkit-install-script.git"
+    echo "  cd bug-bounty-toolkit-install-script"
+    echo "  ./install.sh"
     exit 1
 fi
 
