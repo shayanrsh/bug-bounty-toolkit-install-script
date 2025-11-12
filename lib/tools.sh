@@ -25,17 +25,26 @@ tool_install_zsh() {
     done
     
     if [[ ${#packages[@]} -gt 0 ]]; then
-        log_info "Installing packages: ${packages[*]}"
+        log_info "Installing ${#packages[@]} package(s): ${packages[*]}"
         
         if [[ "$DRY_RUN" == "false" ]]; then
-            sudo apt-get update -qq &
-            ui_spinner $! "Updating package lists"
+            # Update package lists with progress
+            if ! ui_exec_with_progress "Updating package lists" sudo apt-get update -qq; then
+                log_warning "Package list update had warnings (continuing...)"
+            fi
             
-            sudo apt-get install -y "${packages[@]}" &>/dev/null &
-            ui_spinner $! "Installing ZSH packages"
+            # Install packages with progress
+            if ! ui_exec_with_progress "Installing ZSH packages (${#packages[@]} packages)" \
+                DEBIAN_FRONTEND=noninteractive sudo apt-get install -y -qq "${packages[@]}"; then
+                log_error "Failed to install packages"
+                return 1
+            fi
         else
+            log_info "[DRY RUN] Would update package lists"
             log_info "[DRY RUN] Would install: ${packages[*]}"
         fi
+    else
+        log_success "All required packages already installed"
     fi
     
     # Verify ZSH installation

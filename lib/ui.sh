@@ -106,6 +106,36 @@ ui_spinner() {
     return $exit_code
 }
 
+# Execute command with progress feedback
+ui_exec_with_progress() {
+    local message="$1"
+    shift
+    local command=("$@")
+    
+    log_info "$message"
+    printf "${YELLOW}⠿${NC} %s " "$message"
+    
+    # Execute command and capture output
+    local output
+    local exit_code
+    if output=$("${command[@]}" 2>&1); then
+        exit_code=0
+        printf "\r${GREEN}✓${NC} %s\n" "$message"
+    else
+        exit_code=$?
+        printf "\r${RED}✗${NC} %s (exit code: %d)\n" "$message" "$exit_code"
+        if [[ -n "$output" ]]; then
+            log_error "Command output:"
+            echo "$output" | tee -a "$LOG_FILE" >&2
+        fi
+    fi
+    
+    # Log output
+    echo "$output" >> "$LOG_FILE"
+    
+    return $exit_code
+}
+
 # Estimated time remaining
 ui_eta() {
     local start_time=$1
