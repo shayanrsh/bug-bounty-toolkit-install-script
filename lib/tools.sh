@@ -314,11 +314,6 @@ tool_install_go() {
         log_error "Go installation verification failed"
         return 1
     fi
-    else
-        log_error "Failed to download Go"
-        rm -f "$temp_file"
-        return 1
-    fi
 }
 
 tool_uninstall_go() {
