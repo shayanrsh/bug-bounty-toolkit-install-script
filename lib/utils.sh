@@ -55,6 +55,7 @@ util_is_wsl() {
 util_wait_for_apt_lock() {
     local max_wait=300  # 5 minutes
     local waited=0
+    local last_report=-10
     local lock_files=(
         "/var/lib/dpkg/lock-frontend"
         "/var/lib/dpkg/lock"
@@ -79,26 +80,23 @@ util_wait_for_apt_lock() {
     log_info "Waiting for lock to be released (timeout: ${max_wait}s)..."
     
     while [[ $waited -lt $max_wait ]]; do
-        local all_clear=true
-        
-        for lock_file in "${lock_files[@]}"; do
-            if sudo lsof "$lock_file" &>/dev/null; then
-                all_clear=false
-                break
-            fi
-        done
-        
-        if [[ "$all_clear" == "true" ]]; then
+        if ! util_get_apt_lock_holders >/dev/null 2>&1; then
+            printf '\r\033[K'
             log_success "APT lock released"
             return 0
         fi
-        
+
+        if (( waited - last_report >= 10 )); then
+            util_log_apt_lock_holders
+            last_report=$waited
+        fi
+
         printf "\r${YELLOW}⏳${NC} Waiting for APT lock... (%ds/%ds)" "$waited" "$max_wait"
         sleep 2
         ((waited+=2))
     done
     
-    echo ""
+    printf '\r\033[K'
     log_error "Timeout waiting for APT lock"
     
     if [[ "$INTERACTIVE" == "true" ]]; then
@@ -145,6 +143,49 @@ util_force_kill_apt_locks() {
     
     log_success "APT locks cleared"
     return 0
+}
+
+util_get_apt_lock_holders() {
+    local lock_files=(
+        "/var/lib/dpkg/lock-frontend"
+        "/var/lib/dpkg/lock"
+        "/var/lib/apt/lists/lock"
+        "/var/cache/apt/archives/lock"
+    )
+    local holders=()
+
+    for lock_file in "${lock_files[@]}"; do
+        local pids
+        pids=$(sudo lsof -t "$lock_file" 2>/dev/null | sort -u | tr '\n' ' ')
+        if [[ -z "$pids" ]]; then
+            continue
+        fi
+        for pid in $pids; do
+            local cmd user
+            cmd=$(ps -p "$pid" -o comm= 2>/dev/null | tr -d '\n' || echo "unknown")
+            user=$(ps -p "$pid" -o user= 2>/dev/null | tr -d '\n' || echo "unknown")
+            holders+=("${pid}|${user}|${cmd}|${lock_file}")
+        done
+    done
+
+    if [[ ${#holders[@]} -eq 0 ]]; then
+        return 1
+    fi
+
+    printf '%s\n' "${holders[@]}"
+    return 0
+}
+
+util_log_apt_lock_holders() {
+    local holders
+    if ! holders=$(util_get_apt_lock_holders); then
+        return 1
+    fi
+
+    log_info "APT lock currently held by:"
+    while IFS='|' read -r pid user cmd lock_file; do
+        log_info "  PID ${pid} (${cmd}) by ${user} -> ${lock_file}"
+    done <<< "$holders"
 }
 
 util_is_root() {
@@ -237,8 +278,13 @@ util_check_prerequisites() {
         log_info "Installing missing prerequisites..."
         
         if [[ "$DRY_RUN" == "false" ]]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y "${missing_commands[@]}"
+            util_wait_for_apt_lock || return 1
+            if ! ui_stream_command "Updating package lists" sudo apt-get update; then
+                return 1
+            fi
+            if ! ui_stream_command "Installing prerequisites" sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing_commands[@]}"; then
+                return 1
+            fi
         fi
     fi
     
@@ -412,13 +458,11 @@ util_git_clone() {
         return 0
     fi
     
-    git clone --depth=1 "$repo_url" "$dest_dir" 2>&1 | \
-        grep -v "^Cloning" | \
-        while IFS= read -r line; do
-            log_debug "$line"
-        done
-    
-    return "${PIPESTATUS[0]}"
+    if ui_stream_command "Cloning ${description}" git clone --depth=1 "$repo_url" "$dest_dir"; then
+        return 0
+    fi
+
+    return 1
 }
 
 util_git_update() {
@@ -480,7 +524,11 @@ util_get_tool_version() {
 # ==============================================================================
 
 util_manifest_init() {
+    local force="${1:-false}"
     mkdir -p "$(dirname "$MANIFEST_FILE")"
+    if [[ -f "$MANIFEST_FILE" ]] && [[ "$force" != "true" ]]; then
+        return 0
+    fi
     
     cat > "$MANIFEST_FILE" << EOF
 {
@@ -491,7 +539,8 @@ util_manifest_init() {
         "kernel": "$(uname -r)",
         "arch": "$(uname -m)"
     },
-    "tools": {}
+    "tools": {},
+    "steps": {}
 }
 EOF
 }
@@ -517,7 +566,118 @@ util_manifest_add_tool() {
            '.tools[$cat] += [{name: $name, version: $ver, path: $path, installed: (now | strftime("%Y-%m-%dT%H:%M:%SZ"))}]' \
            "$MANIFEST_FILE" > "$temp_file"
         mv "$temp_file" "$MANIFEST_FILE"
+    else
+        printf '%s|%s|%s|%s\n' "$category" "$tool_name" "$version" "$install_path" >> "${MANIFEST_FILE}.fallback"
     fi
+}
+
+util_manifest_set_step() {
+    local step_id="$1"
+    local status="$2"
+    local description="${3:-}"
+    local detail="${4:-}"
+
+    if [[ -z "$step_id" ]]; then
+        return 0
+    fi
+
+    util_manifest_init
+
+    if util_command_exists jq; then
+        local temp_file
+        temp_file=$(mktemp)
+        jq --arg id "$step_id" \
+           --arg status "$status" \
+           --arg desc "$description" \
+           --arg detail "$detail" \
+           '.steps[$id] = {
+                status: $status,
+                description: $desc,
+                detail: $detail,
+                updated: (now | strftime("%Y-%m-%dT%H:%M:%SZ"))
+            }' \
+            "$MANIFEST_FILE" > "$temp_file"
+        mv "$temp_file" "$MANIFEST_FILE"
+    fi
+}
+
+util_generate_manifest() {
+    util_manifest_init
+
+    if [[ ! -f "${MANIFEST_FILE}.fallback" ]]; then
+        return 0
+    fi
+
+    if ! util_command_exists jq; then
+        log_debug "jq not available, keeping manifest fallback entries"
+        return 0
+    fi
+
+    while IFS='|' read -r category tool version path; do
+        util_manifest_add_tool "$category" "$tool" "$version" "$path"
+    done < "${MANIFEST_FILE}.fallback"
+
+    rm -f "${MANIFEST_FILE}.fallback"
+}
+
+util_state_step_file() {
+    local step_id="$1"
+    echo "${STEP_STATE_DIR}/${step_id}.state"
+}
+
+util_state_prepare() {
+    local mode="${1:-reset}"
+    mkdir -p "$STEP_STATE_DIR"
+    if [[ "$mode" == "reset" ]]; then
+        rm -f "$STEP_STATE_DIR"/*.state 2>/dev/null || true
+    fi
+}
+
+util_state_mark_step() {
+    local step_id="$1"
+    local status="$2"
+    local description="${3:-}"
+    local detail="${4:-}"
+    local step_file
+    step_file=$(util_state_step_file "$step_id")
+
+    mkdir -p "$STEP_STATE_DIR"
+    printf '%s|%s|%s|%s\n' "$status" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$description" "$detail" > "$step_file"
+    util_manifest_set_step "$step_id" "$status" "$description" "$detail"
+}
+
+util_state_get_step_status() {
+    local step_id="$1"
+    local step_file
+    step_file=$(util_state_step_file "$step_id")
+    if [[ -f "$step_file" ]]; then
+        cut -d'|' -f1 "$step_file"
+    fi
+}
+
+util_state_get_step_description() {
+    local step_id="$1"
+    local step_file
+    step_file=$(util_state_step_file "$step_id")
+    if [[ -f "$step_file" ]]; then
+        cut -d'|' -f3 "$step_file"
+    fi
+}
+
+util_state_get_step_detail() {
+    local step_id="$1"
+    local step_file
+    step_file=$(util_state_step_file "$step_id")
+    if [[ -f "$step_file" ]]; then
+        cut -d'|' -f4 "$step_file"
+    fi
+}
+
+util_state_clear_step() {
+    local step_id="$1"
+    local step_file
+    step_file=$(util_state_step_file "$step_id")
+    rm -f "$step_file" 2>/dev/null || true
 }
 
 # ==============================================================================

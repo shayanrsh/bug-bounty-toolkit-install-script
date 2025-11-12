@@ -295,44 +295,85 @@ core_execute_installation_steps() {
     
     declare -a installed_tools=()
     local failed=false
+    local resume_ready="true"
+
+    if [[ "$RESUME_MODE" == "true" && -n "$RESUME_TARGET" ]]; then
+        resume_ready="false"
+    fi
     
     for step_info in "${steps_ref[@]}"; do
         ((current_step++))
         
         IFS=':' read -r function_name description <<< "$step_info"
-        
+
+        local skip_due_to_target="false"
+        if [[ "$RESUME_MODE" == "true" && -n "$RESUME_TARGET" && "$resume_ready" == "false" ]]; then
+            if [[ "$function_name" == "$RESUME_TARGET" ]]; then
+                resume_ready="true"
+            else
+                skip_due_to_target="true"
+            fi
+        fi
+
         ui_step_header "$current_step" "$total_steps" "$description"
+
+        if [[ "$skip_due_to_target" == "true" ]]; then
+            log_info "Skipping $description (waiting for resume target $RESUME_TARGET)"
+            continue
+        fi
+
+        local recorded_status=""
+        if [[ "$RESUME_MODE" == "true" ]]; then
+            recorded_status=$(util_state_get_step_status "$function_name")
+        fi
+
+        if [[ "$recorded_status" == "completed" ]]; then
+            log_info "$description already completed, skipping"
+            continue
+        fi
+        
+        if [[ "$recorded_status" == "running" ]]; then
+            log_warning "$description appears to have been interrupted previously; retrying"
+        elif [[ "$recorded_status" == "failed" ]]; then
+            log_warning "$description previously failed; retrying"
+        fi
         
         # Show ETA
         if [[ $current_step -gt 1 ]]; then
             local eta=$(ui_eta "$start_time" "$current_step" "$total_steps")
             log_info "$eta"
         fi
-        
-        # Execute installation function
-        if declare -f "$function_name" >/dev/null; then
-            if "$function_name"; then
-                installed_tools+=("$description")
-                log_success "$description completed"
-            else
-                log_error "$description failed"
-                failed=true
-                
-                if [[ "$INTERACTIVE" == "true" ]]; then
-                    if ! ui_confirm "Continue with remaining steps?" "y"; then
-                        log_warning "Installation aborted by user"
-                        rollback_execute
-                        return 1
-                    fi
-                else
-                    log_error "Installation failed, executing rollback..."
+
+        if ! declare -f "$function_name" >/dev/null; then
+            log_error "Installation function not found: $function_name"
+            util_state_mark_step "$function_name" "failed" "$description" "function_missing"
+            failed=true
+            continue
+        fi
+
+        util_state_mark_step "$function_name" "running" "$description"
+
+        if "$function_name"; then
+            util_state_mark_step "$function_name" "completed" "$description"
+            installed_tools+=("$description")
+            log_success "$description completed"
+        else
+            local exit_code=$?
+            util_state_mark_step "$function_name" "failed" "$description" "exit_code=${exit_code}"
+            log_error "$description failed"
+            failed=true
+            
+            if [[ "$INTERACTIVE" == "true" ]]; then
+                if ! ui_confirm "Continue with remaining steps?" "y"; then
+                    log_warning "Installation aborted by user"
                     rollback_execute
                     return 1
                 fi
+            else
+                log_error "Installation failed, executing rollback..."
+                rollback_execute
+                return 1
             fi
-        else
-            log_error "Installation function not found: $function_name"
-            failed=true
         fi
         
         echo
@@ -341,6 +382,11 @@ core_execute_installation_steps() {
     # Show summary
     ui_show_summary installed_tools
     
+    if [[ "$RESUME_MODE" == "true" && -n "$RESUME_TARGET" && "$resume_ready" == "false" ]]; then
+        log_error "Resume target '$RESUME_TARGET' was not found in the selected workflow"
+        return 1
+    fi
+
     if [[ "$failed" == "true" ]]; then
         log_warning "Installation completed with errors"
         return 1

@@ -268,6 +268,18 @@ ui_run_with_live_progress() {
     return $exit_code
 }
 
+ui_stream_command() {
+    local message="$1"
+    shift
+
+    if [[ $# -eq 0 ]]; then
+        log_error "ui_stream_command called without a command"
+        return 1
+    fi
+
+    ui_run_with_live_progress 1 1 "$message" "$@"
+}
+
 # Spinner for background operations
 ui_spinner() {
     local pid=$1

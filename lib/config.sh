@@ -17,6 +17,7 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly LIB_DIR="${SCRIPT_DIR}/lib"
 readonly LOG_DIR="${HOME}/.security-tools/logs"
 readonly STATE_DIR="${HOME}/.security-tools/state"
+readonly STEP_STATE_DIR="${STATE_DIR}/steps"
 readonly CONFIG_FILE="${HOME}/.security-tools/config"
 readonly MANIFEST_FILE="${HOME}/.security-tools/manifest.json"
 readonly LOG_FILE="${LOG_DIR}/install-$(date +%Y%m%d-%H%M%S).log"
@@ -256,7 +257,7 @@ EOF
 
 # Initialize directories
 config_init_dirs() {
-    local dirs=("$LOG_DIR" "$STATE_DIR" "$TOOLS_DIR" "$WORDLISTS_DIR" "$SCRIPTS_DIR")
+    local dirs=("$LOG_DIR" "$STATE_DIR" "$STEP_STATE_DIR" "$TOOLS_DIR" "$WORDLISTS_DIR" "$SCRIPTS_DIR")
     for dir in "${dirs[@]}"; do
         mkdir -p "$dir" 2>/dev/null || return 1
     done

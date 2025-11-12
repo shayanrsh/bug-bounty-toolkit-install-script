@@ -33,39 +33,18 @@ tool_install_zsh() {
                 log_error "Cannot proceed with package installation"
                 return 1
             }
-            
-            # Update package lists with real-time progress
-            echo -e "${BLUE}➜${NC} Updating package lists..."
-            sudo apt-get update 2>&1 | grep -E "(Hit:|Get:|Fetched|Reading)" || true
-            echo ""
-            
-            # Install packages with real-time output
-            echo -e "${BLUE}➜${NC} Installing ZSH packages (${#packages[@]} packages)..."
-            echo -e "  ${DIM}Packages: ${packages[*]}${NC}"
-            echo ""
-            
-            # Run apt-get install and show filtered output
-            sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}" 2>&1 | \
-                while IFS= read -r line; do
-                    # Show relevant progress lines
-                    if [[ "$line" =~ (Reading|Building|Selecting|Unpacking|Setting\ up|Processing|already|The\ following|NEW|upgraded|installed|to\ remove|not\ upgraded) ]]; then
-                        echo "$line"
-                    fi
-                done
-            
-            # Check the actual exit status of apt-get (first command in pipe)
-            local apt_exit=${PIPESTATUS[0]}
-            
-            echo ""
-            if [[ $apt_exit -eq 0 ]]; then
-                log_success "ZSH and packages installed successfully"
-            else
-                log_error "Failed to install packages (exit code: $apt_exit)"
-                echo ""
-                log_info "Running apt-get again to show full error..."
-                sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
+
+            if ! ui_stream_command "Updating package lists" sudo apt-get update; then
+                log_error "Failed to update package lists"
                 return 1
             fi
+
+            log_info "Installing ${#packages[@]} package(s): ${packages[*]}"
+            if ! ui_stream_command "Installing ZSH packages" sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"; then
+                log_error "Failed to install packages"
+                return 1
+            fi
+            log_success "ZSH and packages installed successfully"
         else
             log_info "[DRY RUN] Would update package lists"
             log_info "[DRY RUN] Would install: ${packages[*]}"
@@ -437,8 +416,11 @@ tool_install_go_tools() {
     # Install dependencies if needed
     if [[ ${#deps_needed[@]} -gt 0 ]]; then
         log_info "Installing system dependencies: ${deps_needed[*]}"
-        if ! ui_exec_with_progress "Installing dependencies (${#deps_needed[@]} packages)" \
-            sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${deps_needed[@]}"; then
+        util_wait_for_apt_lock || {
+            log_warning "APT lock could not be acquired for dependency install"
+            return 1
+        }
+        if ! ui_stream_command "Installing system dependencies" sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${deps_needed[@]}"; then
             log_warning "Some dependencies may have failed (continuing...)"
         fi
     fi
@@ -696,12 +678,18 @@ tool_install_apt_tools() {
     log_info "Installing APT packages: ${packages[*]}"
     
     if [[ "$DRY_RUN" == "false" ]]; then
-        sudo apt-get update -qq &
-        ui_spinner $! "Updating package lists"
-        
-        sudo apt-get install -y "${packages[@]}" &>/dev/null &
-        ui_spinner $! "Installing APT packages"
-        
+        util_wait_for_apt_lock || {
+            log_error "Unable to acquire APT lock"
+            return 1
+        }
+        if ! ui_stream_command "Updating package lists" sudo apt-get update; then
+            log_error "Failed to update package lists"
+            return 1
+        fi
+        if ! ui_stream_command "Installing APT packages" sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"; then
+            log_error "Failed to install APT packages"
+            return 1
+        fi
         log_success "APT tools installed"
     else
         log_info "[DRY RUN] Would install: ${packages[*]}"
@@ -734,7 +722,13 @@ tool_install_pipx_tools() {
     # Ensure pipx is installed
     if ! util_command_exists pipx; then
         log_info "Installing pipx..."
-        [[ "$DRY_RUN" == "false" ]] && sudo apt-get install -y pipx &>/dev/null
+        if [[ "$DRY_RUN" == "false" ]]; then
+            util_wait_for_apt_lock || return 1
+            if ! ui_stream_command "Installing pipx" sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y pipx; then
+                log_error "Failed to install pipx"
+                return 1
+            fi
+        fi
         pipx ensurepath &>/dev/null
     fi
     
@@ -773,13 +767,13 @@ tool_install_wordlists() {
         local wordlist_info="${WORDLISTS[$wordlist_name]}"
         IFS='|' read -r url type dest <<< "$wordlist_info"
         
-        ui_progress_bar "$current" "$total" "Installing $wordlist_name"
-        
         if [[ "$DRY_RUN" == "true" ]]; then
             log_info "[DRY RUN] Would install wordlist: $wordlist_name"
             continue
         fi
         
+        log_info "Installing wordlist [$current/$total]: $wordlist_name"
+
         case "$type" in
             git)
                 if [[ ! -d "$dest" ]]; then

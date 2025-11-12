@@ -125,6 +125,9 @@ VERBOSE="false"
 DEBUG="false"
 SKIP_CHECKS="false"
 PROFILE=""
+RESUME_MODE="false"
+RESUME_TARGET=""
+ALLOW_ROOT="false"
 
 # ==============================================================================
 # Help Function
@@ -151,6 +154,8 @@ OPTIONS:
     --profile=PROFILE      Use profile (minimal/full/pentest/developer)
     --update               Update existing tools
     --uninstall            Uninstall all tools
+    --resume[=STEP]        Resume a previous run (optional step id)
+    --allow-root           Allow running as root (not recommended)
 
 EXAMPLES:
     ./install.sh                    # Interactive menu
@@ -193,6 +198,9 @@ parse_arguments() {
             --profile=*) PROFILE="${1#*=}"; INSTALL_MODE="profile"; shift ;;
             --update) INSTALL_MODE="update"; shift ;;
             --uninstall) INSTALL_MODE="uninstall"; shift ;;
+            --resume) RESUME_MODE="true"; shift ;;
+            --resume=*) RESUME_MODE="true"; RESUME_TARGET="${1#*=}"; shift ;;
+            --allow-root) ALLOW_ROOT="true"; shift ;;
             *) echo "Unknown option: $1"; exit 1 ;;
         esac
     done
@@ -252,14 +260,39 @@ interactive_menu() {
 main() {
     # Initialize logging
     ui_log_init
+    config_init_dirs
     
     # Parse command-line arguments
     parse_arguments "$@"
+
+    if util_is_root && [[ "$ALLOW_ROOT" != "true" ]]; then
+        log_warning "Script is running as root; this is not recommended"
+        if [[ "$INTERACTIVE" == "true" ]]; then
+            if ! ui_confirm "Continue running as root?" "n"; then
+                log_error "Aborted due to root execution"
+                exit 1
+            fi
+        else
+            ui_show_error "Running the installer as root is disabled in non-interactive mode" \
+                "Run as a regular user with sudo privileges or pass --allow-root to override."
+            exit 1
+        fi
+    fi
     
     if [[ -z "$INSTALL_MODE" ]]; then
         interactive_menu
     fi
     
+    if [[ "$RESUME_MODE" == "true" ]]; then
+        util_state_prepare "resume"
+        util_manifest_init
+    else
+        util_state_prepare "reset"
+        if [[ "$INSTALL_MODE" != "update" && "$INSTALL_MODE" != "uninstall" ]]; then
+            util_manifest_init "true"
+        fi
+    fi
+
     if [[ "$INSTALL_MODE" != "interactive" ]] && [[ "$QUIET" != "true" ]]; then
         ui_show_banner
     fi
