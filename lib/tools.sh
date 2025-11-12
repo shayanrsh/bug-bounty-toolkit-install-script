@@ -35,7 +35,7 @@ tool_install_zsh() {
             
             # Install packages with progress
             if ! ui_exec_with_progress "Installing ZSH packages (${#packages[@]} packages)" \
-                DEBIAN_FRONTEND=noninteractive sudo apt-get install -y -qq "${packages[@]}"; then
+                sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${packages[@]}"; then
                 log_error "Failed to install packages"
                 return 1
             fi
