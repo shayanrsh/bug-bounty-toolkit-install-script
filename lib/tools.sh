@@ -36,19 +36,36 @@ tool_install_zsh() {
             
             # Update package lists with real-time progress
             echo -e "${BLUE}➜${NC} Updating package lists..."
-            if ! sudo apt-get update 2>&1 | grep -v "^$"; then
-                log_warning "Package list update had warnings (continuing...)"
-            fi
+            sudo apt-get update 2>&1 | grep -E "(Hit:|Get:|Fetched|Reading)" || true
+            echo ""
             
             # Install packages with real-time output
             echo -e "${BLUE}➜${NC} Installing ZSH packages (${#packages[@]} packages)..."
-            if ! sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}" 2>&1 | \
-                grep -E "(Setting up|Unpacking|Processing|Preparing|Reading)" || true; then
-                log_error "Failed to install packages"
+            echo -e "  ${DIM}Packages: ${packages[*]}${NC}"
+            echo ""
+            
+            # Run apt-get install and show filtered output
+            sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}" 2>&1 | \
+                while IFS= read -r line; do
+                    # Show relevant progress lines
+                    if [[ "$line" =~ (Reading|Building|Selecting|Unpacking|Setting\ up|Processing|already|The\ following|NEW|upgraded|installed|to\ remove|not\ upgraded) ]]; then
+                        echo "$line"
+                    fi
+                done
+            
+            # Check the actual exit status of apt-get (first command in pipe)
+            local apt_exit=${PIPESTATUS[0]}
+            
+            echo ""
+            if [[ $apt_exit -eq 0 ]]; then
+                log_success "ZSH and packages installed successfully"
+            else
+                log_error "Failed to install packages (exit code: $apt_exit)"
+                echo ""
+                log_info "Running apt-get again to show full error..."
+                sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
                 return 1
             fi
-            
-            log_success "ZSH and packages installed successfully"
         else
             log_info "[DRY RUN] Would update package lists"
             log_info "[DRY RUN] Would install: ${packages[*]}"
