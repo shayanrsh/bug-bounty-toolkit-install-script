@@ -452,6 +452,60 @@ util_add_to_path() {
     fi
 }
 
+# Setup Go environment variables in shell RC files
+util_setup_go_env() {
+    log_info "Configuring Go environment variables..."
+    
+    # Determine which shell RC file to use
+    local rc_files=()
+    
+    # Check for ZSH
+    if [[ -f "$HOME/.zshrc" ]]; then
+        rc_files+=("$HOME/.zshrc")
+    fi
+    
+    # Check for Bash
+    if [[ -f "$HOME/.bashrc" ]]; then
+        rc_files+=("$HOME/.bashrc")
+    fi
+    
+    # If no RC files found, create bashrc
+    if [[ ${#rc_files[@]} -eq 0 ]]; then
+        rc_files+=("$HOME/.bashrc")
+        touch "$HOME/.bashrc"
+        log_info "Created $HOME/.bashrc"
+    fi
+    
+    # Go environment configuration
+    local go_config='
+# Go Programming Language Configuration
+export PATH=$PATH:/usr/local/go/bin
+export PATH=$PATH:$(go env GOPATH)/bin
+export GOPATH=$(go env GOPATH)
+'
+    
+    for rc_file in "${rc_files[@]}"; do
+        # Check if Go config already exists
+        if grep -q "Go Programming Language Configuration" "$rc_file" 2>/dev/null; then
+            log_info "Go environment already configured in $rc_file"
+        else
+            log_info "Adding Go environment to $rc_file"
+            echo "$go_config" >> "$rc_file"
+            log_success "Go environment added to $rc_file"
+        fi
+    done
+    
+    # Add to current session PATH
+    export PATH="/usr/local/go/bin:$PATH"
+    if command -v go &>/dev/null; then
+        export PATH="$(go env GOPATH)/bin:$PATH"
+        export GOPATH="$(go env GOPATH)"
+    fi
+    
+    log_success "Go environment configured"
+    log_info "Note: Run 'source ~/.zshrc' or 'source ~/.bashrc' to apply changes"
+}
+
 util_source_env() {
     local env_file="$1"
     

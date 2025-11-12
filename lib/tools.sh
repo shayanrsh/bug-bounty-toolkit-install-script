@@ -228,20 +228,35 @@ tool_uninstall_zsh() {
 tool_install_go() {
     ui_section_header "Installing Go Programming Language" "$PURPLE"
     
-    local go_version="1.22.4"
+    # Fetch latest Go version from go.dev
+    log_info "Fetching latest Go version from go.dev..."
+    local go_version
+    go_version=$(curl -sSL 'https://go.dev/VERSION?m=text' 2>/dev/null | head -n1 | sed 's/go//')
+    
+    if [[ -z "$go_version" ]]; then
+        log_warning "Failed to fetch latest version, using fallback version"
+        go_version="1.23.3"
+    fi
+    
+    log_info "Latest Go version: $go_version"
     local go_url="https://go.dev/dl/go${go_version}.linux-amd64.tar.gz"
     
     if util_command_exists go; then
-        local current_version=$(util_get_tool_version go)
+        local current_version=$(go version | awk '{print $3}' | sed 's/go//')
         log_success "Go $current_version is already installed"
         
         if [[ "$current_version" == "$go_version" ]]; then
+            util_setup_go_env
             return 0
         fi
         
         if [[ "$INTERACTIVE" == "true" ]]; then
-            ui_confirm "Update Go from $current_version to $go_version?" "n" || return 0
+            ui_confirm "Update Go from $current_version to $go_version?" "y" || {
+                util_setup_go_env
+                return 0
+            }
         elif [[ "$FORCE_INSTALL" == "false" ]]; then
+            util_setup_go_env
             return 0
         fi
     fi
@@ -249,35 +264,56 @@ tool_install_go() {
     log_info "Installing Go $go_version..."
     
     if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "[DRY RUN] Would install Go $go_version"
+        log_info "[DRY RUN] Would download: $go_url"
+        log_info "[DRY RUN] Would install Go $go_version to /usr/local/go"
+        log_info "[DRY RUN] Would configure environment variables"
         return 0
     fi
     
-    local temp_file=$(util_create_temp_file)
+    local temp_file=$(util_create_temp_file "go-${go_version}.tar.gz")
     
-    if util_download "$go_url" "$temp_file" "Go $go_version"; then
-        log_info "Extracting Go..."
-        
-        sudo rm -rf /usr/local/go &>/dev/null &
-        ui_spinner $! "Removing old Go installation"
-        
-        sudo tar -C /usr/local -xzf "$temp_file" &>/dev/null &
-        ui_spinner $! "Extracting Go archive"
-        
+    # Download Go
+    if ! ui_exec_with_progress "Downloading Go ${go_version}" \
+        curl -sSL -o "$temp_file" "$go_url"; then
+        log_error "Failed to download Go"
         rm -f "$temp_file"
-        
-        # Verify installation
-        if /usr/local/go/bin/go version &>/dev/null; then
-            util_add_to_path "/usr/local/go/bin"
-            local version=$(util_get_tool_version go)
-            log_success "Go $version installed successfully"
-            util_manifest_add_tool "languages" "go" "$version" "/usr/local/go"
-            rollback_add "tool_uninstall_go"
-            return 0
-        else
-            log_error "Go installation verification failed"
-            return 1
+        return 1
+    fi
+    
+    # Remove old installation
+    if [[ -d /usr/local/go ]]; then
+        if ! ui_exec_with_progress "Removing old Go installation" \
+            sudo rm -rf /usr/local/go; then
+            log_warning "Failed to remove old Go installation (continuing...)"
         fi
+    fi
+    
+    # Extract Go
+    if ! ui_exec_with_progress "Extracting Go ${go_version}" \
+        sudo tar -C /usr/local -xzf "$temp_file"; then
+        log_error "Failed to extract Go"
+        rm -f "$temp_file"
+        return 1
+    fi
+    
+    rm -f "$temp_file"
+    
+    # Verify installation
+    if /usr/local/go/bin/go version &>/dev/null; then
+        local installed_version=$(/usr/local/go/bin/go version | awk '{print $3}' | sed 's/go//')
+        log_success "Go ${installed_version} installed successfully"
+        
+        # Setup environment variables
+        util_setup_go_env
+        
+        # Add to manifest
+        util_manifest_add_tool "languages" "go" "$installed_version" "/usr/local/go"
+        rollback_add "tool_uninstall_go"
+        return 0
+    else
+        log_error "Go installation verification failed"
+        return 1
+    fi
     else
         log_error "Failed to download Go"
         rm -f "$temp_file"
@@ -362,12 +398,36 @@ tool_install_go_tools() {
         tool_install_go || return 1
     fi
     
-    util_add_to_path "/usr/local/go/bin"
-    util_add_to_path "$(go env GOPATH)/bin"
+    # Ensure Go environment is set up
+    util_setup_go_env
+    
+    # Install system dependencies for specific tools
+    log_info "Checking system dependencies..."
+    local deps_needed=()
+    
+    # naabu requires libpcap
+    if [[ -n "${GO_TOOLS[naabu]}" ]]; then
+        if ! dpkg -l | grep -q libpcap-dev; then
+            deps_needed+=("libpcap-dev")
+        fi
+    fi
+    
+    # Install dependencies if needed
+    if [[ ${#deps_needed[@]} -gt 0 ]]; then
+        log_info "Installing system dependencies: ${deps_needed[*]}"
+        if ! ui_exec_with_progress "Installing dependencies (${#deps_needed[@]} packages)" \
+            sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${deps_needed[@]}"; then
+            log_warning "Some dependencies may have failed (continuing...)"
+        fi
+    fi
     
     local total=${#GO_TOOLS[@]}
     local current=0
     local failed_tools=()
+    local start_time=$(date +%s)
+    
+    log_info "Installing $total Go-based security tools..."
+    echo ""
     
     for tool_pkg in "${!GO_TOOLS[@]}"; do
         ((current++))
@@ -376,29 +436,52 @@ tool_install_go_tools() {
         local tool_path="${tool_info%%|*}"
         local description="${tool_info##*|}"
         
-        ui_progress_bar "$current" "$total" "Installing $tool_pkg"
-        
-        log_info "Installing $tool_pkg: $description"
+        # Show progress bar
+        ui_progress_bar "$current" "$total" "$tool_pkg"
         
         if [[ "$DRY_RUN" == "false" ]]; then
-            if go install -v "$tool_path" &>/dev/null; then
-                log_success "$tool_pkg installed"
-                local version=$(util_get_tool_version "$tool_pkg")
-                util_manifest_add_tool "go_tools" "$tool_pkg" "$version" "$(go env GOPATH)/bin/$tool_pkg"
+            # Install with real-time feedback
+            log_info "[$current/$total] Installing $tool_pkg: $description"
+            
+            if go install -v "$tool_path" 2>&1 | tee -a "$LOG_FILE" | grep -q "go: downloading\|go: finding"; then
+                # Installation in progress
+                :
+            fi
+            
+            # Check if tool was installed
+            local tool_binary="$(go env GOPATH)/bin/$tool_pkg"
+            if [[ -f "$tool_binary" ]]; then
+                log_success "✓ $tool_pkg installed successfully"
+                local version=$(util_get_tool_version "$tool_pkg" 2>/dev/null || echo "unknown")
+                util_manifest_add_tool "go_tools" "$tool_pkg" "$version" "$tool_binary"
             else
-                log_error "Failed to install $tool_pkg"
+                log_error "✗ Failed to install $tool_pkg"
                 failed_tools+=("$tool_pkg")
             fi
         else
-            log_info "[DRY RUN] Would install: $tool_pkg"
+            log_info "[DRY RUN] Would install: $tool_pkg ($tool_path)"
         fi
+        
+        echo "" # Spacing between tools
     done
     
-    echo # New line after progress bar
+    # Final progress bar
+    ui_progress_bar "$total" "$total" "Complete"
+    echo ""
     
+    # Summary
+    local elapsed=$(($(date +%s) - start_time))
+    local success_count=$((total - ${#failed_tools[@]}))
+    
+    log_info "═══════════════════════════════════════"
+    log_info "Installation Summary:"
+    log_success "  Successful: $success_count/$total tools"
     if [[ ${#failed_tools[@]} -gt 0 ]]; then
-        log_warning "Failed to install: ${failed_tools[*]}"
+        log_error "  Failed: ${#failed_tools[@]} tools"
+        log_warning "  Failed tools: ${failed_tools[*]}"
     fi
+    log_info "  Time elapsed: ${elapsed}s"
+    log_info "═══════════════════════════════════════"
     
     rollback_add "tool_uninstall_go_tools"
     return 0
