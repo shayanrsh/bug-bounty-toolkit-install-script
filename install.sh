@@ -67,7 +67,7 @@ if [[ "$SCRIPT_SOURCE" =~ ^/dev/fd/ ]] || [[ "$SCRIPT_SOURCE" =~ ^/proc/self/fd/
     # Change to install directory and run the script in non-interactive mode
     # (curl pipe cannot handle interactive prompts)
     cd "$INSTALL_DIR" || exit 1
-    exec bash install.sh --non-interactive --allow-root "$@"
+    exec bash install.sh --yes --allow-root "$@"
 fi
 
 # Normal execution from downloaded repository
