@@ -21,29 +21,42 @@ IFS=$'\n\t'
 
 # Detect if script is being run from curl pipe
 SCRIPT_SOURCE="${BASH_SOURCE[0]}"
-if [[ "$SCRIPT_SOURCE" == *"/dev/fd/"* ]] || [[ "$SCRIPT_SOURCE" == "/proc/self/fd/"* ]]; then
+if [[ "$SCRIPT_SOURCE" =~ ^/dev/fd/ ]] || [[ "$SCRIPT_SOURCE" =~ ^/proc/self/fd/ ]]; then
     # Script is being piped from curl, need to clone the repository
-    echo "Detected installation via curl, cloning repository..."
+    echo "=========================================="
+    echo "Bug Bounty Toolkit Installer"
+    echo "=========================================="
+    echo ""
+    echo "Detected installation via curl pipe..."
+    echo "Cloning repository to temporary directory..."
+    echo ""
     
     INSTALL_DIR="/tmp/bug-bounty-toolkit-$$"
     REPO_URL="https://github.com/shayanrsh/bug-bounty-toolkit-install-script.git"
     
     # Check if git is installed
     if ! command -v git &> /dev/null; then
-        echo "Installing git..."
-        sudo apt-get update -qq && sudo apt-get install -y git -qq
+        echo "Git not found. Installing git..."
+        sudo apt-get update -qq && sudo apt-get install -y git -qq || {
+            echo "ERROR: Failed to install git"
+            exit 1
+        }
     fi
     
     # Clone repository to temp directory
+    echo "Downloading repository..."
     git clone -q "$REPO_URL" "$INSTALL_DIR" 2>/dev/null || {
-        echo "ERROR: Failed to clone repository"
+        echo "ERROR: Failed to clone repository from $REPO_URL"
         exit 1
     }
+    
+    echo "Repository cloned successfully!"
+    echo "Starting installation..."
+    echo ""
     
     # Change to install directory and run the script
     cd "$INSTALL_DIR" || exit 1
     exec bash install.sh "$@"
-    exit 0
 fi
 
 # Normal execution from downloaded repository
