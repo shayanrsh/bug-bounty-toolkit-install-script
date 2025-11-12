@@ -823,7 +823,3 @@ ui_show_installation_plan() {
         ui_confirm "Proceed with installation?" "y" || exit 0
     fi
 }
-    echo -e "${CYAN}│                                                                          │${NC}"
-    echo -e "${CYAN}╰──────────────────────────────────────────────────────────────────────────╯${NC}"
-    echo
-}
