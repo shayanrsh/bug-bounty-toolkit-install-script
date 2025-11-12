@@ -173,7 +173,7 @@ show_version() {
 
 parse_arguments() {
     if [[ $# -eq 0 ]]; then
-        INSTALL_MODE="interactive"
+        # No arguments provided - will show interactive menu
         return 0
     fi
     
@@ -250,7 +250,10 @@ interactive_menu() {
 # ==============================================================================
 
 main() {
-    util_init_logging
+    # Initialize logging
+    ui_log_init
+    
+    # Parse command-line arguments
     parse_arguments "$@"
     
     if [[ -z "$INSTALL_MODE" ]]; then
