@@ -1,470 +1,938 @@
-#!/bin/bash#!/bin/bash
+#!/bin/bash#!/bin/bash#!/bin/bash
 
-# ==============================================================================# ==============================================================================
 
-# Security Tools Installer - Main Entry Point# Security Tools Installer - Main Entry Point
 
-# ==============================================================================# ==============================================================================
+# ==============================================================================# ==============================================================================# ==============================================================================
 
-# Description: Professional, modular security tools installation framework# Description: Professional, modular security tools installation framework
+# Security Tools Installer - Main Entry Point
 
-# Version: 3.0.0# Version: 3.0.0
+# ==============================================================================# Security Tools Installer - Main Entry Point# Security Tools Installer - Main Entry Point
 
-# Author: DevOps Security Team# Author: DevOps Security Team
+# Description: Professional, modular security tools installation framework
 
-# License: MIT# License: MIT
+# Version: 3.0.0# ==============================================================================# ==============================================================================
 
-##
+# Author: Bug Bounty Community
 
-# Architecture:# Architecture:
+# License: MIT# Description: Professional, modular security tools installation framework# Description: Professional, modular security tools installation framework
 
-#   - Modular plugin-based system for easy tool additions#   - Modular plugin-based system for easy tool additions
+#
 
-#   - Robust error handling with rollback capabilities#   - Robust error handling with rollback capabilities
+# Architecture:# Version: 3.0.0# Version: 3.0.0
 
-#   - Professional UI/UX with progress indicators#   - Professional UI/UX with progress indicators
+#   - Modular plugin-based system for easy tool additions
 
-#   - Support for multiple installation profiles#   - Support for multiple installation profiles
+#   - Robust error handling with rollback capabilities# Author: DevOps Security Team# Author: DevOps Security Team
 
-#   - Dry-run mode for preview#   - Dry-run mode for preview
+#   - Professional UI/UX with progress indicators
 
-#   - Comprehensive logging and manifest generation#   - Comprehensive logging and manifest generation
+#   - Support for multiple installation profiles# License: MIT# License: MIT
 
-##
+#   - Dry-run mode for preview
 
-# Usage:# Usage:
+#   - Comprehensive logging and manifest generation##
 
-#   ./install.sh [OPTIONS]#   ./install.sh [OPTIONS]
+#
 
-##
+# Usage:# Architecture:# Architecture:
 
-# Options:# Options:
+#   ./install.sh [OPTIONS]
 
-#   -h, --help              Show help message#   -h, --help              Show help message
+##   - Modular plugin-based system for easy tool additions#   - Modular plugin-based system for easy tool additions
 
-#   -v, --version           Show version#   -v, --version           Show version
+# Options:
 
-#   -d, --dry-run          Preview installation without making changes#   -d, --dry-run          Preview installation without making changes
+#   -h, --help              Show help message#   - Robust error handling with rollback capabilities#   - Robust error handling with rollback capabilities
 
-#   -f, --force            Force installation (skip confirmations)#   -f, --force            Force installation (skip confirmations)
+#   -v, --version           Show version
+
+#   -d, --dry-run          Preview installation without making changes#   - Professional UI/UX with progress indicators#   - Professional UI/UX with progress indicators
+
+#   -f, --force            Force installation (skip confirmations)
+
+#   -q, --quiet            Quiet mode (minimal output)#   - Support for multiple installation profiles#   - Support for multiple installation profiles
+
+#   -V, --verbose          Verbose mode (detailed output)
+
+#   --debug                Enable debug mode#   - Dry-run mode for preview#   - Dry-run mode for preview
+
+#   --no-interactive       Non-interactive mode
+
+#   --skip-checks          Skip system requirement checks#   - Comprehensive logging and manifest generation#   - Comprehensive logging and manifest generation
+
+#   --full                 Full installation (default)
+
+#   --zsh-only             Install ZSH environment only##
+
+#   --tools-only           Install security tools only
+
+#   --go-tools             Install Go tools only# Usage:# Usage:
+
+#   --python-tools         Install Python tools only
+
+#   --wordlists            Install wordlists only#   ./install.sh [OPTIONS]#   ./install.sh [OPTIONS]
+
+#   --profile=PROFILE      Install using profile (minimal/full/pentest/developer)
+
+#   --update               Update existing tools##
+
+#   --uninstall            Uninstall all tools
+
+#   --custom               Custom installation (interactive selection)# Options:# Options:
+
+#
+
+# Examples:#   -h, --help              Show help message#   -h, --help              Show help message
+
+#   ./install.sh                    # Interactive menu
+
+#   ./install.sh --full             # Full installation#   -v, --version           Show version#   -v, --version           Show version
+
+#   ./install.sh --dry-run --full   # Preview full installation
+
+#   ./install.sh --profile=pentest  # Install pentest profile#   -d, --dry-run          Preview installation without making changes#   -d, --dry-run          Preview installation without making changes
+
+#   ./install.sh --update           # Update existing tools
+
+##   -f, --force            Force installation (skip confirmations)#   -f, --force            Force installation (skip confirmations)
+
+# ==============================================================================
 
 #   -q, --quiet            Quiet mode (minimal output)#   -q, --quiet            Quiet mode (minimal output)
 
-#   -V, --verbose          Verbose mode (detailed output)#   -V, --verbose          Verbose mode (detailed output)
+set -uo pipefail
 
-#   --debug                Enable debug mode#   --debug                Enable debug mode
+IFS=$'\n\t'#   -V, --verbose          Verbose mode (detailed output)#   -V, --verbose          Verbose mode (detailed output)
 
-#   --no-interactive       Non-interactive mode#   --no-interactive       Non-interactive mode
 
-#   --skip-checks          Skip system requirement checks#   --skip-checks          Skip system requirement checks
+
+# ==============================================================================#   --debug                Enable debug mode#   --debug                Enable debug mode
+
+# Source Library Modules
+
+# ==============================================================================#   --no-interactive       Non-interactive mode#   --no-interactive       Non-interactive mode
+
+
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"#   --skip-checks          Skip system requirement checks#   --skip-checks          Skip system requirement checks
+
+LIB_DIR="${SCRIPT_DIR}/lib"
 
 #   --full                 Full installation (default)#   --full                 Full installation (default)
 
-#   --zsh-only             Install ZSH environment only#   --zsh-only             Install ZSH environment only
+# Check if lib directory exists
 
-#   --tools-only           Install security tools only#   --tools-only           Install security tools only
+if [[ ! -d "$LIB_DIR" ]]; then#   --zsh-only             Install ZSH environment only#   --zsh-only             Install ZSH environment only
+
+    echo "ERROR: Library directory not found: $LIB_DIR"
+
+    exit 1#   --tools-only           Install security tools only#   --tools-only           Install security tools only
+
+fi
 
 #   --go-tools             Install Go tools only#   --go-tools             Install Go tools only
 
-#   --python-tools         Install Python tools only#   --python-tools         Install Python tools only
+# Source all library modules
 
-#   --wordlists            Install wordlists only#   --wordlists            Install wordlists only
+# shellcheck disable=SC1091#   --python-tools         Install Python tools only#   --python-tools         Install Python tools only
 
-#   --profile=PROFILE      Install using profile (minimal/full/pentest/developer)#   --profile=PROFILE      Install using profile (minimal/full/pentest/developer)
+source "${LIB_DIR}/config.sh"  || { echo "Failed to load config module"; exit 1; }
 
-#   --update               Update existing tools#   --update               Update existing tools
-
-#   --uninstall            Uninstall all tools#   --uninstall            Uninstall all tools
-
-#   --custom               Custom installation (interactive selection)#   --custom               Custom installation (interactive selection)
-
-##
-
-# Examples:# Examples:
-
-#   ./install.sh                    # Interactive menu#   ./install.sh                    # Interactive menu
-
-#   ./install.sh --full             # Full installation#   ./install.sh --full             # Full installation
-
-#   ./install.sh --dry-run --full   # Preview full installation#   ./install.sh --dry-run --full   # Preview full installation
-
-#   ./install.sh --profile=pentest  # Install pentest profile#   ./install.sh --profile=pentest  # Install pentest profile
-
-#   ./install.sh --update           # Update existing tools#   ./install.sh --update           # Update existing tools
-
-##
-
-# ==============================================================================# ==============================================================================
-
-
-
-set -uo pipefailset -uo pipefail
-
-IFS=$'\n\t'IFS=$'\n\t'
-
-
-
-# ==============================================================================# Script configuration
-
-# Source Library Modulesreadonly SCRIPT_VERSION="2.0"
-
-# ==============================================================================readonly LOG_FILE="/tmp/security-tools-install.log"
-
-readonly CONFIG_FILE="$HOME/.security-tools-config"
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-LIB_DIR="${SCRIPT_DIR}/lib"# Trap errors and cleanup
-
-trap 'log_error "Script failed at line $LINENO. Exit code: $?"' ERR
-
-# Check if lib directory existstrap 'cleanup' EXIT
-
-if [[ ! -d "$LIB_DIR" ]]; then
-
-    echo "ERROR: Library directory not found: $LIB_DIR"# Colors for output
-
-    exit 1readonly RED='\033[0;31m'
-
-fireadonly GREEN='\033[0;32m'
-
-readonly YELLOW='\033[1;33m'
-
-# Source all library modulesreadonly BLUE='\033[0;34m'
-
-# shellcheck disable=SC1091readonly PURPLE='\033[0;35m'
-
-source "${LIB_DIR}/config.sh"  || { echo "Failed to load config module"; exit 1; }readonly CYAN='\033[0;36m'
-
-# shellcheck disable=SC1091readonly NC='\033[0m' # No Color
+# shellcheck disable=SC1091#   --wordlists            Install wordlists only#   --wordlists            Install wordlists only
 
 source "${LIB_DIR}/ui.sh"      || { echo "Failed to load UI module"; exit 1; }
 
-# shellcheck disable=SC1091# Global variables
+# shellcheck disable=SC1091#   --profile=PROFILE      Install using profile (minimal/full/pentest/developer)#   --profile=PROFILE      Install using profile (minimal/full/pentest/developer)
 
-source "${LIB_DIR}/utils.sh"   || { echo "Failed to load utils module"; exit 1; }USER_HOME=""
+source "${LIB_DIR}/utils.sh"   || { echo "Failed to load utils module"; exit 1; }
 
-# shellcheck disable=SC1091TOTAL_STEPS=0
+# shellcheck disable=SC1091#   --update               Update existing tools#   --update               Update existing tools
 
-source "${LIB_DIR}/tools.sh"   || { echo "Failed to load tools module"; exit 1; }CURRENT_STEP=0
+source "${LIB_DIR}/tools.sh"   || { echo "Failed to load tools module"; exit 1; }
 
-# shellcheck disable=SC1091
+# shellcheck disable=SC1091#   --uninstall            Uninstall all tools#   --uninstall            Uninstall all tools
 
-source "${LIB_DIR}/core.sh"    || { echo "Failed to load core module"; exit 1; }# Cleanup function
+source "${LIB_DIR}/core.sh"    || { echo "Failed to load core module"; exit 1; }
+
+#   --custom               Custom installation (interactive selection)#   --custom               Custom installation (interactive selection)
+
+# ==============================================================================
+
+# Error Handling and Cleanup##
+
+# ==============================================================================
+
+# Examples:# Examples:
 
 cleanup() {
 
-# ==============================================================================    log_info "Cleaning up temporary files..."
+    log_debug "Cleanup function called"#   ./install.sh                    # Interactive menu#   ./install.sh                    # Interactive menu
 
-# Error Handling and Cleanup    # Add any cleanup operations here
+    util_cleanup_temp
 
-# ==============================================================================}
+}#   ./install.sh --full             # Full installation#   ./install.sh --full             # Full installation
 
 
 
-cleanup() {# Progress bar configuration
+error_handler() {#   ./install.sh --dry-run --full   # Preview full installation#   ./install.sh --dry-run --full   # Preview full installation
 
-    log_debug "Cleanup function called"readonly PROGRESS_BAR_WIDTH=50
+    local line_no=$1
 
-    util_cleanup_tempreadonly SPINNER_CHARS="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    local exit_code=$2#   ./install.sh --profile=pentest  # Install pentest profile#   ./install.sh --profile=pentest  # Install pentest profile
 
-}
+    
 
-# Enhanced progress bar functions
+    log_error "Script failed at line $line_no with exit code $exit_code"#   ./install.sh --update           # Update existing tools#   ./install.sh --update           # Update existing tools
 
-error_handler() {draw_progress_bar() {
+    ui_show_error "Installation failed unexpectedly" \
 
-    local line_no=$1    local current="$1"
+        "Check the log file for details: $LOG_FILE"##
 
-    local exit_code=$2    local total="$2"
+    
 
-        local message="$3"
+    if [[ ${#ROLLBACK_STACK[@]} -gt 0 ]]; then# ==============================================================================# ==============================================================================
 
-    log_error "Script failed at line $line_no with exit code $exit_code"    local percentage=$((current * 100 / total))
+        log_warning "Rollback available."
 
-    ui_show_error "Installation failed unexpectedly" \    local filled_width=$((current * PROGRESS_BAR_WIDTH / total))
+        if [[ "$INTERACTIVE" == "true" ]]; then
 
-        "Check the log file for details: $LOG_FILE"    local empty_width=$((PROGRESS_BAR_WIDTH - filled_width))
+            if ui_confirm "Execute rollback?" "y"; then
 
-        
+                rollback_executeset -uo pipefailset -uo pipefail
 
-    if [[ ${#ROLLBACK_STACK[@]} -gt 0 ]]; then    # Create the progress bar
+            fi
 
-        log_warning "Rollback available."    local filled_bar=$(printf "█%.0s" $(seq 1 $filled_width))
-
-        if [[ "$INTERACTIVE" == "true" ]]; then    local empty_bar=$(printf "░%.0s" $(seq 1 $empty_width))
-
-            if ui_confirm "Execute rollback?" "y"; then    
-
-                rollback_execute    # Color coding based on percentage
-
-            fi    local bar_color="$RED"
-
-        fi    if [[ $percentage -ge 75 ]]; then
-
-    fi        bar_color="$GREEN"
-
-        elif [[ $percentage -ge 50 ]]; then
-
-    cleanup        bar_color="$YELLOW"
-
-    exit "$exit_code"    elif [[ $percentage -ge 25 ]]; then
-
-}        bar_color="$BLUE"
+        fiIFS=$'\n\t'IFS=$'\n\t'
 
     fi
 
-# Set up traps    
+    
 
-trap 'error_handler ${LINENO} $?' ERR    # Format: [████████████░░░░░░░░] 75% (15/20) Installing Go tools...
+    cleanup
 
-trap cleanup EXIT SIGINT SIGTERM    printf "\r${CYAN}[${bar_color}%s${CYAN}%s${CYAN}] %3d%% (%d/%d) ${NC}%s" \
+    exit "$exit_code"# ==============================================================================# Script configuration
 
-           "$filled_bar" "$empty_bar" "$percentage" "$current" "$total" "$message"
+}
 
-# ==============================================================================}
+# Source Library Modulesreadonly SCRIPT_VERSION="2.0"
 
-# Command Line Argument Parsing
+# Set up error handling
 
-# ==============================================================================# Spinner for long-running operations
+trap 'error_handler $LINENO $?' ERR# ==============================================================================readonly LOG_FILE="/tmp/security-tools-install.log"
 
-show_spinner() {
+trap cleanup EXIT
 
-show_help() {    local pid=$1
+readonly CONFIG_FILE="$HOME/.security-tools-config"
 
-    cat << EOF    local message="$2"
+# ==============================================================================
 
-${SCRIPT_NAME} v${SCRIPT_VERSION}    local spinner_index=0
+# Global VariablesSCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ==============================================================================
+
+LIB_DIR="${SCRIPT_DIR}/lib"# Trap errors and cleanup
+
+INSTALL_MODE=""
+
+INTERACTIVE="true"trap 'log_error "Script failed at line $LINENO. Exit code: $?"' ERR
+
+DRY_RUN="false"
+
+FORCE="false"# Check if lib directory existstrap 'cleanup' EXIT
+
+QUIET="false"
+
+VERBOSE="false"if [[ ! -d "$LIB_DIR" ]]; then
+
+DEBUG="false"
+
+SKIP_CHECKS="false"    echo "ERROR: Library directory not found: $LIB_DIR"# Colors for output
+
+PROFILE=""
+
+    exit 1readonly RED='\033[0;31m'
+
+# ==============================================================================
+
+# Help and Version Functionsfireadonly GREEN='\033[0;32m'
+
+# ==============================================================================
+
+readonly YELLOW='\033[1;33m'
+
+show_help() {
+
+    cat << EOF# Source all library modulesreadonly BLUE='\033[0;34m'
+
+${BOLD}${CYAN}Security Tools Installer v${SCRIPT_VERSION}${NC}
+
+# shellcheck disable=SC1091readonly PURPLE='\033[0;35m'
+
+${BOLD}USAGE:${NC}
+
+    $0 [OPTIONS]source "${LIB_DIR}/config.sh"  || { echo "Failed to load config module"; exit 1; }readonly CYAN='\033[0;36m'
+
+
+
+${BOLD}OPTIONS:${NC}# shellcheck disable=SC1091readonly NC='\033[0m' # No Color
+
+    ${GREEN}-h, --help${NC}              Show this help message
+
+    ${GREEN}-v, --version${NC}           Show version informationsource "${LIB_DIR}/ui.sh"      || { echo "Failed to load UI module"; exit 1; }
+
+    ${GREEN}-d, --dry-run${NC}           Preview installation without making changes
+
+    ${GREEN}-f, --force${NC}             Force installation (skip confirmations)# shellcheck disable=SC1091# Global variables
+
+    ${GREEN}-q, --quiet${NC}             Quiet mode (minimal output)
+
+    ${GREEN}-V, --verbose${NC}           Verbose mode (detailed output)source "${LIB_DIR}/utils.sh"   || { echo "Failed to load utils module"; exit 1; }USER_HOME=""
+
+    ${GREEN}--debug${NC}                 Enable debug mode
+
+    ${GREEN}--no-interactive${NC}        Non-interactive mode# shellcheck disable=SC1091TOTAL_STEPS=0
+
+    ${GREEN}--skip-checks${NC}           Skip system requirement checks
+
+source "${LIB_DIR}/tools.sh"   || { echo "Failed to load tools module"; exit 1; }CURRENT_STEP=0
+
+${BOLD}INSTALLATION MODES:${NC}
+
+    ${GREEN}--full${NC}                  Install everything (default)# shellcheck disable=SC1091
+
+    ${GREEN}--zsh-only${NC}              Install ZSH environment only
+
+    ${GREEN}--tools-only${NC}            Install security tools onlysource "${LIB_DIR}/core.sh"    || { echo "Failed to load core module"; exit 1; }# Cleanup function
+
+    ${GREEN}--go-tools${NC}              Install Go-based tools only
+
+    ${GREEN}--python-tools${NC}          Install Python-based tools onlycleanup() {
+
+    ${GREEN}--wordlists${NC}             Install wordlists only
+
+    ${GREEN}--custom${NC}                Custom installation (interactive selection)# ==============================================================================    log_info "Cleaning up temporary files..."
+
+
+
+${BOLD}PROFILES:${NC}# Error Handling and Cleanup    # Add any cleanup operations here
+
+    ${GREEN}--profile=minimal${NC}       Essential tools only
+
+    ${GREEN}--profile=full${NC}          All available tools (same as --full)# ==============================================================================}
+
+    ${GREEN}--profile=pentest${NC}       Pentesting-focused configuration
+
+    ${GREEN}--profile=developer${NC}     Development environment
+
+
+
+${BOLD}MANAGEMENT:${NC}cleanup() {# Progress bar configuration
+
+    ${GREEN}--update${NC}                Update existing tools
+
+    ${GREEN}--uninstall${NC}             Uninstall all tools    log_debug "Cleanup function called"readonly PROGRESS_BAR_WIDTH=50
+
+
+
+${BOLD}EXAMPLES:${NC}    util_cleanup_tempreadonly SPINNER_CHARS="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+    $0                              # Interactive menu
+
+    $0 --full                       # Full installation}
+
+    $0 --dry-run --full             # Preview installation
+
+    $0 --profile=pentest            # Install pentest profile# Enhanced progress bar functions
+
+    $0 --zsh-only                   # ZSH environment only
+
+    $0 --go-tools --python-tools    # Go and Python toolserror_handler() {draw_progress_bar() {
+
+    $0 --update                     # Update existing tools
+
+    local line_no=$1    local current="$1"
+
+${BOLD}DOCUMENTATION:${NC}
+
+    README.md           Complete user guide    local exit_code=$2    local total="$2"
+
+    ARCHITECTURE.md     Technical documentation
+
+    QUICKSTART.md       Quick reference guide        local message="$3"
+
+
+
+${BOLD}SUPPORT:${NC}    log_error "Script failed at line $line_no with exit code $exit_code"    local percentage=$((current * 100 / total))
+
+    GitHub: https://github.com/shayanrsh/bug-bounty-toolkit-install-script
+
+    Issues: https://github.com/shayanrsh/bug-bounty-toolkit-install-script/issues    ui_show_error "Installation failed unexpectedly" \    local filled_width=$((current * PROGRESS_BAR_WIDTH / total))
+
+
+
+EOF        "Check the log file for details: $LOG_FILE"    local empty_width=$((PROGRESS_BAR_WIDTH - filled_width))
+
+}
+
+        
+
+show_version() {
+
+    cat << EOF    if [[ ${#ROLLBACK_STACK[@]} -gt 0 ]]; then    # Create the progress bar
+
+${BOLD}${CYAN}Security Tools Installer${NC}
+
+Version: ${GREEN}${SCRIPT_VERSION}${NC}        log_warning "Rollback available."    local filled_bar=$(printf "█%.0s" $(seq 1 $filled_width))
+
+License: MIT
+
+Author: Bug Bounty Community        if [[ "$INTERACTIVE" == "true" ]]; then    local empty_bar=$(printf "░%.0s" $(seq 1 $empty_width))
+
+
+
+${BOLD}Features:${NC}            if ui_confirm "Execute rollback?" "y"; then    
+
+  ✓ Modular architecture
+
+  ✓ 30+ security tools                rollback_execute    # Color coding based on percentage
+
+  ✓ Automatic rollback
+
+  ✓ Multiple profiles            fi    local bar_color="$RED"
+
+  ✓ WSL2 compatible
+
+        fi    if [[ $percentage -ge 75 ]]; then
+
+${BOLD}Repository:${NC}
+
+  https://github.com/shayanrsh/bug-bounty-toolkit-install-script    fi        bar_color="$GREEN"
+
+
+
+EOF        elif [[ $percentage -ge 50 ]]; then
+
+}
+
+    cleanup        bar_color="$YELLOW"
+
+# ==============================================================================
+
+# Argument Parsing    exit "$exit_code"    elif [[ $percentage -ge 25 ]]; then
+
+# ==============================================================================
+
+}        bar_color="$BLUE"
+
+parse_arguments() {
+
+    # If no arguments, enable interactive mode    fi
+
+    if [[ $# -eq 0 ]]; then
+
+        INSTALL_MODE="interactive"# Set up traps    
+
+        return 0
+
+    fitrap 'error_handler ${LINENO} $?' ERR    # Format: [████████████░░░░░░░░] 75% (15/20) Installing Go tools...
 
     
 
-Professional security tools installation framework with modular architecture.    echo -ne "\n"
+    while [[ $# -gt 0 ]]; dotrap cleanup EXIT SIGINT SIGTERM    printf "\r${CYAN}[${bar_color}%s${CYAN}%s${CYAN}] %3d%% (%d/%d) ${NC}%s" \
 
-    while kill -0 "$pid" 2>/dev/null; do
+        case "$1" in
 
-USAGE:        local spinner_char="${SPINNER_CHARS:$spinner_index:1}"
+            -h|--help)           "$filled_bar" "$empty_bar" "$percentage" "$current" "$total" "$message"
 
-    $0 [OPTIONS]        printf "\r${YELLOW}%s${NC} %s" "$spinner_char" "$message"
+                show_help
 
-        spinner_index=$(( (spinner_index + 1) % ${#SPINNER_CHARS} ))
-
-OPTIONS:        sleep 0.1
-
-    -h, --help              Show this help message    done
-
-    -v, --version           Show version information    printf "\r${GREEN}✓${NC} %s\n" "$message"
-
-    -d, --dry-run          Preview installation without making changes}
-
-    -f, --force            Force installation (skip confirmations)
-
-    -q, --quiet            Quiet mode (minimal output)# Enhanced progress tracking
-
-    -V, --verbose          Verbose mode (detailed output)update_progress() {
-
-    --debug                Enable debug mode with detailed logs    ((CURRENT_STEP++))
-
-    --no-interactive       Non-interactive mode (use defaults)    local message="${1:-Step $CURRENT_STEP}"
-
-    --skip-checks          Skip system requirement checks (dangerous)    draw_progress_bar "$CURRENT_STEP" "$TOTAL_STEPS" "$message"
-
-    
-
-INSTALLATION MODES:    # Add a small delay for visual effect
-
-    --full                 Full installation (all tools) [DEFAULT]    sleep 0.1
-
-    --zsh-only             Install ZSH + Oh My ZSH only}
-
-    --tools-only           Install security tools only
-
-    --go-tools             Install Go-based tools only# Progress bar for downloads
-
-    --python-tools         Install Python-based tools onlydownload_with_progress() {
-
-    --wordlists            Install wordlists only    local url="$1"
-
-    --profile=PROFILE      Use installation profile    local output="$2"
-
-    --custom               Custom installation (interactive)    local description="$3"
-
-    
-
-MAINTENANCE OPERATIONS:    log_info "Downloading $description..."
-
-    --update               Update all installed tools    
-
-    --uninstall            Remove all installed tools    # Use wget with progress bar
-
-    wget --progress=bar:force:noscroll "$url" -O "$output" 2>&1 | \
-
-PROFILES:    while IFS= read -r line; do
-
-    minimal                ZSH + Go + Essential tools (nuclei, subfinder, httpx)        # Parse wget progress and create custom progress bar
-
-    full                   All available tools and wordlists        if [[ $line =~ ([0-9]+)% ]]; then
-
-    pentest                Pentesting focused (tools + wordlists)            local percent="${BASH_REMATCH[1]}"
-
-    developer              Development environment (ZSH + Go + Rust + build tools)            local filled=$((percent * PROGRESS_BAR_WIDTH / 100))
-
-            local empty=$((PROGRESS_BAR_WIDTH - filled))
-
-EXAMPLES:            local filled_bar=$(printf "█%.0s" $(seq 1 $filled))
-
-    # Interactive mode with menu            local empty_bar=$(printf "░%.0s" $(seq 1 $empty))
-
-    $0            printf "\r${CYAN}Downloading: [${GREEN}%s${CYAN}%s${CYAN}] %3d%% ${NC}%s" \
-
-                   "$filled_bar" "$empty_bar" "$percent" "$description"
-
-    # Full installation with verbose output        fi
-
-    $0 --full --verbose    done
-
-    echo # New line after progress
-
-    # Dry run to preview installation}
-
-    $0 --dry-run --full
-
-# Enhanced logging functions with timestamps and file logging
-
-    # Install pentesting profilelog_message() {
-
-    $0 --profile=pentest    local level="$1"
-
-    local color="$2"
-
-    # Non-interactive full installation    local message="$3"
-
-    $0 --no-interactive --full    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-
-    local icon=""
-
-    # Update existing tools    
-
-    $0 --update    # Add icons for different log levels
-
-    case "$level" in
-
-    # Debug mode installation        "INFO")    icon="ℹ️ " ;;
-
-    $0 --debug --full        "SUCCESS") icon="✅" ;;
-
-        "WARNING") icon="⚠️ " ;;
-
-LOGS AND FILES:        "ERROR")   icon="❌" ;;
-
-    Log file:     ${LOG_DIR}/install-*.log        "DEBUG")   icon="🔍" ;;
-
-    Manifest:     ${MANIFEST_FILE}    esac
-
-    Config:       ${CONFIG_FILE}    
-
-    echo -e "${color}${icon} [${level}] ${timestamp}${NC} $message" | tee -a "$LOG_FILE"
-
-For more information, visit: https://github.com/yourusername/security-tools-installer}
-
-EOF
-
-}# Fancy box drawing functions
-
-draw_box() {
-
-show_version() {    local text="$1"
-
-    echo "$SCRIPT_NAME v$SCRIPT_VERSION"    local color="${2:-$CYAN}"
-
-    echo "Author: $SCRIPT_AUTHOR"    local width=$((${#text} + 4))
-
-}    
-
-    echo -e "${color}╔$(printf "═%.0s" $(seq 1 $((width - 2))))╗${NC}"
-
-parse_arguments() {    echo -e "${color}║ ${text} ║${NC}"
-
-    while [[ $# -gt 0 ]]; do    echo -e "${color}╚$(printf "═%.0s" $(seq 1 $((width - 2))))╝${NC}"
-
-        case $1 in}
-
-            -h|--help)
-
-                show_help# Section headers
-
-                exit 0print_section_header() {
-
-                ;;    local title="$1"
-
-            -v|--version)    local color="${2:-$BLUE}"
-
-                show_version    
-
-                exit 0    echo -e "\n${color}╭─────────────────────────────────────────────────────────────────╮${NC}"
-
-                ;;    echo -e "${color}│$(printf "%*s" $(((67-${#title})/2)) "")${title}$(printf "%*s" $(((67-${#title})/2)) "")│${NC}"
-
-            -d|--dry-run)    echo -e "${color}╰─────────────────────────────────────────────────────────────────╯${NC}\n"
-
-                DRY_RUN=true}
-
-                log_info "Dry run mode enabled"
-
-                shift# Step indicator
-
-                ;;print_step() {
-
-            -f|--force)    local step_num="$1"
-
-                FORCE_INSTALL=true    local total_steps="$2"
-
-                log_info "Force mode enabled"    local description="$3"
-
-                shift    
-
-                ;;    echo -e "\n${PURPLE}┌─ Step ${step_num}/${total_steps} ─────────────────────────────────────────────┐${NC}"
-
-            -q|--quiet)    echo -e "${PURPLE}│ ${description}$(printf "%*s" $((60-${#description})) "")│${NC}"
-
-                VERBOSE=false    echo -e "${PURPLE}└─────────────────────────────────────────────────────────────────┘${NC}"
-
-                shift}
+                exit 0# ==============================================================================}
 
                 ;;
 
-            -V|--verbose)# Logging functions
+            -v|--version)# Command Line Argument Parsing
 
-                VERBOSE=truelog_info() {
+                show_version
 
-                log_info "Verbose mode enabled"    log_message "INFO" "$BLUE" "$1"
-
-                shift}
+                exit 0# ==============================================================================# Spinner for long-running operations
 
                 ;;
 
-            --debug)log_success() {
+            -d|--dry-run)show_spinner() {
 
-                DEBUG=true    log_message "SUCCESS" "$GREEN" "$1"
+                DRY_RUN="true"
 
-                log_info "Debug mode enabled"}
+                log_info "Dry-run mode enabled"show_help() {    local pid=$1
 
                 shift
 
-                ;;log_warning() {
+                ;;    cat << EOF    local message="$2"
 
-            --no-interactive)    log_message "WARNING" "$YELLOW" "$1"
+            -f|--force)
 
-                INTERACTIVE=false}
+                FORCE="true"${SCRIPT_NAME} v${SCRIPT_VERSION}    local spinner_index=0
 
-                log_info "Non-interactive mode"
+                shift
 
-                shiftlog_error() {
+                ;;    
+
+            -q|--quiet)
+
+                QUIET="true"Professional security tools installation framework with modular architecture.    echo -ne "\n"
+
+                VERBOSE="false"
+
+                shift    while kill -0 "$pid" 2>/dev/null; do
+
+                ;;
+
+            -V|--verbose)USAGE:        local spinner_char="${SPINNER_CHARS:$spinner_index:1}"
+
+                VERBOSE="true"
+
+                QUIET="false"    $0 [OPTIONS]        printf "\r${YELLOW}%s${NC} %s" "$spinner_char" "$message"
+
+                shift
+
+                ;;        spinner_index=$(( (spinner_index + 1) % ${#SPINNER_CHARS} ))
+
+            --debug)
+
+                DEBUG="true"OPTIONS:        sleep 0.1
+
+                VERBOSE="true"
+
+                set -x    -h, --help              Show this help message    done
+
+                shift
+
+                ;;    -v, --version           Show version information    printf "\r${GREEN}✓${NC} %s\n" "$message"
+
+            --no-interactive)
+
+                INTERACTIVE="false"    -d, --dry-run          Preview installation without making changes}
+
+                shift
+
+                ;;    -f, --force            Force installation (skip confirmations)
+
+            --skip-checks)
+
+                SKIP_CHECKS="true"    -q, --quiet            Quiet mode (minimal output)# Enhanced progress tracking
+
+                shift
+
+                ;;    -V, --verbose          Verbose mode (detailed output)update_progress() {
+
+            --full)
+
+                INSTALL_MODE="full"    --debug                Enable debug mode with detailed logs    ((CURRENT_STEP++))
+
+                shift
+
+                ;;    --no-interactive       Non-interactive mode (use defaults)    local message="${1:-Step $CURRENT_STEP}"
+
+            --zsh-only)
+
+                INSTALL_MODE="zsh"    --skip-checks          Skip system requirement checks (dangerous)    draw_progress_bar "$CURRENT_STEP" "$TOTAL_STEPS" "$message"
+
+                shift
+
+                ;;    
+
+            --tools-only)
+
+                INSTALL_MODE="tools"INSTALLATION MODES:    # Add a small delay for visual effect
+
+                shift
+
+                ;;    --full                 Full installation (all tools) [DEFAULT]    sleep 0.1
+
+            --go-tools)
+
+                INSTALL_MODE="go_tools"    --zsh-only             Install ZSH + Oh My ZSH only}
+
+                shift
+
+                ;;    --tools-only           Install security tools only
+
+            --python-tools)
+
+                INSTALL_MODE="python_tools"    --go-tools             Install Go-based tools only# Progress bar for downloads
+
+                shift
+
+                ;;    --python-tools         Install Python-based tools onlydownload_with_progress() {
+
+            --wordlists)
+
+                INSTALL_MODE="wordlists"    --wordlists            Install wordlists only    local url="$1"
+
+                shift
+
+                ;;    --profile=PROFILE      Use installation profile    local output="$2"
+
+            --custom)
+
+                INSTALL_MODE="custom"    --custom               Custom installation (interactive)    local description="$3"
+
+                shift
+
+                ;;    
+
+            --profile=*)
+
+                PROFILE="${1#*=}"MAINTENANCE OPERATIONS:    log_info "Downloading $description..."
+
+                INSTALL_MODE="profile"
+
+                shift    --update               Update all installed tools    
+
+                ;;
+
+            --update)    --uninstall            Remove all installed tools    # Use wget with progress bar
+
+                INSTALL_MODE="update"
+
+                shift    wget --progress=bar:force:noscroll "$url" -O "$output" 2>&1 | \
+
+                ;;
+
+            --uninstall)PROFILES:    while IFS= read -r line; do
+
+                INSTALL_MODE="uninstall"
+
+                shift    minimal                ZSH + Go + Essential tools (nuclei, subfinder, httpx)        # Parse wget progress and create custom progress bar
+
+                ;;
+
+            *)    full                   All available tools and wordlists        if [[ $line =~ ([0-9]+)% ]]; then
+
+                log_error "Unknown option: $1"
+
+                echo "Use --help for usage information"    pentest                Pentesting focused (tools + wordlists)            local percent="${BASH_REMATCH[1]}"
+
+                exit 1
+
+                ;;    developer              Development environment (ZSH + Go + Rust + build tools)            local filled=$((percent * PROGRESS_BAR_WIDTH / 100))
+
+        esac
+
+    done            local empty=$((PROGRESS_BAR_WIDTH - filled))
+
+}
+
+EXAMPLES:            local filled_bar=$(printf "█%.0s" $(seq 1 $filled))
+
+# ==============================================================================
+
+# Interactive Menu    # Interactive mode with menu            local empty_bar=$(printf "░%.0s" $(seq 1 $empty))
+
+# ==============================================================================
+
+    $0            printf "\r${CYAN}Downloading: [${GREEN}%s${CYAN}%s${CYAN}] %3d%% ${NC}%s" \
+
+interactive_menu() {
+
+    ui_show_banner                   "$filled_bar" "$empty_bar" "$percent" "$description"
+
+    
+
+    echo ""    # Full installation with verbose output        fi
+
+    echo "${BOLD}${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+
+    echo "${BOLD}${CYAN}║${NC}          ${BOLD}Bug Bounty Toolkit Installer Menu${NC}          ${BOLD}${CYAN}║${NC}"    $0 --full --verbose    done
+
+    echo "${BOLD}${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
+
+    echo ""    echo # New line after progress
+
+    echo "  ${GREEN}1)${NC} Full Installation ${DIM}(Everything)${NC}"
+
+    echo "  ${GREEN}2)${NC} ZSH Environment Only"    # Dry run to preview installation}
+
+    echo "  ${GREEN}3)${NC} Security Tools Only ${DIM}(No ZSH)${NC}"
+
+    echo "  ${GREEN}4)${NC} Go Tools Only"    $0 --dry-run --full
+
+    echo "  ${GREEN}5)${NC} Python Tools Only"
+
+    echo "  ${GREEN}6)${NC} Wordlists Only"# Enhanced logging functions with timestamps and file logging
+
+    echo "  ${GREEN}7)${NC} Minimal Profile ${DIM}(Essential tools)${NC}"
+
+    echo "  ${GREEN}8)${NC} Pentest Profile ${DIM}(Pentesting focus)${NC}"    # Install pentesting profilelog_message() {
+
+    echo "  ${GREEN}9)${NC} Developer Profile ${DIM}(Dev environment)${NC}"
+
+    echo "  ${GREEN}10)${NC} Custom Installation ${DIM}(Choose components)${NC}"    $0 --profile=pentest    local level="$1"
+
+    echo "  ${GREEN}11)${NC} Update Existing Tools"
+
+    echo ""    local color="$2"
+
+    echo "  ${YELLOW}u)${NC} Uninstall All"
+
+    echo "  ${RED}q)${NC} Quit"    # Non-interactive full installation    local message="$3"
+
+    echo ""
+
+    echo "${BOLD}${CYAN}────────────────────────────────────────────────────────────${NC}"    $0 --no-interactive --full    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+
+    
+
+    read -rp "$(echo -e "${BOLD}Select an option: ${NC}")" choice    local icon=""
+
+    
+
+    case "$choice" in    # Update existing tools    
+
+        1) INSTALL_MODE="full" ;;
+
+        2) INSTALL_MODE="zsh" ;;    $0 --update    # Add icons for different log levels
+
+        3) INSTALL_MODE="tools" ;;
+
+        4) INSTALL_MODE="go_tools" ;;    case "$level" in
+
+        5) INSTALL_MODE="python_tools" ;;
+
+        6) INSTALL_MODE="wordlists" ;;    # Debug mode installation        "INFO")    icon="ℹ️ " ;;
+
+        7) INSTALL_MODE="profile"; PROFILE="minimal" ;;
+
+        8) INSTALL_MODE="profile"; PROFILE="pentest" ;;    $0 --debug --full        "SUCCESS") icon="✅" ;;
+
+        9) INSTALL_MODE="profile"; PROFILE="developer" ;;
+
+        10) INSTALL_MODE="custom" ;;        "WARNING") icon="⚠️ " ;;
+
+        11) INSTALL_MODE="update" ;;
+
+        u|U) INSTALL_MODE="uninstall" ;;LOGS AND FILES:        "ERROR")   icon="❌" ;;
+
+        q|Q) log_info "Installation cancelled by user"; exit 0 ;;
+
+        *) log_error "Invalid option"; exit 1 ;;    Log file:     ${LOG_DIR}/install-*.log        "DEBUG")   icon="🔍" ;;
+
+    esac
+
+}    Manifest:     ${MANIFEST_FILE}    esac
+
+
+
+# ==============================================================================    Config:       ${CONFIG_FILE}    
+
+# Main Execution
+
+# ==============================================================================    echo -e "${color}${icon} [${level}] ${timestamp}${NC} $message" | tee -a "$LOG_FILE"
+
+
+
+main() {For more information, visit: https://github.com/yourusername/security-tools-installer}
+
+    # Initialize
+
+    util_init_loggingEOF
+
+    
+
+    # Parse command-line arguments}# Fancy box drawing functions
+
+    parse_arguments "$@"
+
+    draw_box() {
+
+    # Show interactive menu if mode not set
+
+    if [[ -z "$INSTALL_MODE" ]]; thenshow_version() {    local text="$1"
+
+        interactive_menu
+
+    fi    echo "$SCRIPT_NAME v$SCRIPT_VERSION"    local color="${2:-$CYAN}"
+
+    
+
+    # Display banner for non-interactive modes    echo "Author: $SCRIPT_AUTHOR"    local width=$((${#text} + 4))
+
+    if [[ "$INSTALL_MODE" != "interactive" ]] && [[ "$QUIET" != "true" ]]; then
+
+        ui_show_banner}    
+
+    fi
+
+        echo -e "${color}╔$(printf "═%.0s" $(seq 1 $((width - 2))))╗${NC}"
+
+    # Pre-installation checks
+
+    if [[ "$SKIP_CHECKS" != "true" ]] && [[ "$INSTALL_MODE" != "update" ]] && [[ "$INSTALL_MODE" != "uninstall" ]]; thenparse_arguments() {    echo -e "${color}║ ${text} ║${NC}"
+
+        log_info "Running pre-installation checks..."
+
+        if ! core_pre_install_checks; then    while [[ $# -gt 0 ]]; do    echo -e "${color}╚$(printf "═%.0s" $(seq 1 $((width - 2))))╝${NC}"
+
+            log_error "Pre-installation checks failed"
+
+            exit 1        case $1 in}
+
+        fi
+
+    fi            -h|--help)
+
+    
+
+    # Execute based on mode                show_help# Section headers
+
+    case "$INSTALL_MODE" in
+
+        full)                exit 0print_section_header() {
+
+            log_info "Starting full installation..."
+
+            core_install_full                ;;    local title="$1"
+
+            ;;
+
+        zsh)            -v|--version)    local color="${2:-$BLUE}"
+
+            log_info "Installing ZSH environment..."
+
+            core_install_zsh                show_version    
+
+            ;;
+
+        tools)                exit 0    echo -e "\n${color}╭─────────────────────────────────────────────────────────────────╮${NC}"
+
+            log_info "Installing security tools..."
+
+            core_install_tools                ;;    echo -e "${color}│$(printf "%*s" $(((67-${#title})/2)) "")${title}$(printf "%*s" $(((67-${#title})/2)) "")│${NC}"
+
+            ;;
+
+        go_tools)            -d|--dry-run)    echo -e "${color}╰─────────────────────────────────────────────────────────────────╯${NC}\n"
+
+            log_info "Installing Go-based tools..."
+
+            core_install_go_tools                DRY_RUN=true}
+
+            ;;
+
+        python_tools)                log_info "Dry run mode enabled"
+
+            log_info "Installing Python-based tools..."
+
+            core_install_python_tools                shift# Step indicator
+
+            ;;
+
+        wordlists)                ;;print_step() {
+
+            log_info "Installing wordlists..."
+
+            core_install_wordlists            -f|--force)    local step_num="$1"
+
+            ;;
+
+        profile)                FORCE_INSTALL=true    local total_steps="$2"
+
+            log_info "Installing profile: $PROFILE..."
+
+            core_install_profile "$PROFILE"                log_info "Force mode enabled"    local description="$3"
+
+            ;;
+
+        custom)                shift    
+
+            log_info "Custom installation mode..."
+
+            core_install_custom                ;;    echo -e "\n${PURPLE}┌─ Step ${step_num}/${total_steps} ─────────────────────────────────────────────┐${NC}"
+
+            ;;
+
+        update)            -q|--quiet)    echo -e "${PURPLE}│ ${description}$(printf "%*s" $((60-${#description})) "")│${NC}"
+
+            log_info "Updating existing tools..."
+
+            core_update_tools                VERBOSE=false    echo -e "${PURPLE}└─────────────────────────────────────────────────────────────────┘${NC}"
+
+            ;;
+
+        uninstall)                shift}
+
+            log_warning "Uninstalling all tools..."
+
+            core_uninstall_all                ;;
+
+            ;;
+
+        *)            -V|--verbose)# Logging functions
+
+            log_error "Invalid installation mode: $INSTALL_MODE"
+
+            exit 1                VERBOSE=truelog_info() {
+
+            ;;
+
+    esac                log_info "Verbose mode enabled"    log_message "INFO" "$BLUE" "$1"
+
+    
+
+    # Show completion message                shift}
+
+    if [[ $? -eq 0 ]]; then
+
+        ui_show_completion                ;;
+
+        
+
+        # Save installation info            --debug)log_success() {
+
+        config_save
+
+                        DEBUG=true    log_message "SUCCESS" "$GREEN" "$1"
+
+        # Generate manifest
+
+        util_generate_manifest                log_info "Debug mode enabled"}
+
+        
+
+        log_success "Installation completed successfully!"                shift
+
+        
+
+        if [[ "$INSTALL_MODE" =~ ^(full|zsh|profile)$ ]]; then                ;;log_warning() {
+
+            echo ""
+
+            echo "${BOLD}${YELLOW}⚠ Important:${NC} Please restart your terminal or run:"            --no-interactive)    log_message "WARNING" "$YELLOW" "$1"
+
+            echo "  ${CYAN}source ~/.zshrc${NC}"
+
+        fi                INTERACTIVE=false}
+
+    else
+
+        log_error "Installation failed"                log_info "Non-interactive mode"
+
+        exit 1
+
+    fi                shiftlog_error() {
+
+}
 
                 ;;    log_message "ERROR" "$RED" "$1"
 
-            --skip-checks)}
+# ==============================================================================
+
+# Script Entry Point            --skip-checks)}
+
+# ==============================================================================
 
                 SKIP_CHECKS=true
+
+main "$@"
 
                 log_warning "Skipping system checks (not recommended)"log_debug() {
 
