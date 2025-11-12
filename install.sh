@@ -274,11 +274,11 @@ main() {
     
     case "$INSTALL_MODE" in
         full) core_install_full ;;
-        zsh) core_install_zsh ;;
-        tools) core_install_tools ;;
-        go_tools) core_install_go_tools ;;
-        python_tools) core_install_python_tools ;;
-        wordlists) core_install_wordlists ;;
+        zsh) core_install_zsh_only ;;
+        tools) core_install_tools_only ;;
+        go_tools) core_install_go_tools_only ;;
+        python_tools) core_install_python_tools_only ;;
+        wordlists) core_install_wordlists_only ;;
         profile) core_install_profile "$PROFILE" ;;
         custom) core_install_custom ;;
         update) core_update_tools ;;
