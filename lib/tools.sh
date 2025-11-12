@@ -411,8 +411,6 @@ tool_install_rust() {
         log_error "Rust installation verification failed"
         return 1
     fi
-        return 1
-    fi
 }
 
 tool_uninstall_rust() {
