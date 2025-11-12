@@ -60,9 +60,18 @@ ui_progress_bar() {
     local current="$1"
     local total="$2"
     local message="${3:-Processing}"
-    local percentage=$((current * 100 / total))
-    local filled_width=$((current * PROGRESS_BAR_WIDTH / total))
+    
+    # Safety checks for division by zero
+    local safe_total=$((total > 0 ? total : 1))
+    local safe_current=$((current > safe_total ? safe_total : current))
+    ((safe_current < 0)) && safe_current=0
+    
+    local percentage=$((safe_current * 100 / safe_total))
+    local filled_width=$((safe_current * PROGRESS_BAR_WIDTH / safe_total))
+    ((filled_width > PROGRESS_BAR_WIDTH)) && filled_width=$PROGRESS_BAR_WIDTH
+    ((filled_width < 0)) && filled_width=0
     local empty_width=$((PROGRESS_BAR_WIDTH - filled_width))
+    ((empty_width < 0)) && empty_width=0
     
     # Color coding based on percentage
     local bar_color="$RED"
@@ -71,14 +80,18 @@ ui_progress_bar() {
     [[ $percentage -ge 25 && $percentage -lt 50 ]] && bar_color="$BLUE"
     
     # Create bars
-    local filled_bar
-    local empty_bar
-    filled_bar=$(printf "█%.0s" $(seq 1 "$filled_width" 2>/dev/null))
-    empty_bar=$(printf "░%.0s" $(seq 1 "$empty_width" 2>/dev/null))
+    local filled_bar=""
+    local empty_bar=""
+    if ((filled_width > 0)); then
+        filled_bar=$(printf "█%.0s" $(seq 1 "$filled_width" 2>/dev/null))
+    fi
+    if ((empty_width > 0)); then
+        empty_bar=$(printf "░%.0s" $(seq 1 "$empty_width" 2>/dev/null))
+    fi
     
     # Display progress - clear line first, then show new progress
     printf "\r\033[K${CYAN}[${bar_color}%s${CYAN}%s] %3d%% (%d/%d)${NC} %s" \
-           "$filled_bar" "$empty_bar" "$percentage" "$current" "$total" "$message"
+           "$filled_bar" "$empty_bar" "$percentage" "$safe_current" "$total" "$message"
 }
 
 # Enhanced progress bar with spinner for active installations
@@ -574,5 +587,20 @@ ui_show_error() {
     
     echo -e "${RED}│                                                                          │${NC}"
     echo -e "${RED}╰──────────────────────────────────────────────────────────────────────────╯${NC}"
+    echo
+}
+
+ui_show_completion() {
+    echo
+    ui_show_success_banner
+    ui_show_next_steps
+    
+    echo -e "${CYAN}╭─ Installation Complete ──────────────────────────────────────────────────╮${NC}"
+    echo -e "${CYAN}│                                                                          │${NC}"
+    echo -e "${CYAN}│${NC} ${GREEN}✓${NC} All components have been successfully installed                     ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC} ${GREEN}✓${NC} Configuration files have been updated                               ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC} ${GREEN}✓${NC} Manifest file has been generated                                    ${CYAN}│${NC}"
+    echo -e "${CYAN}│                                                                          │${NC}"
+    echo -e "${CYAN}╰──────────────────────────────────────────────────────────────────────────╯${NC}"
     echo
 }

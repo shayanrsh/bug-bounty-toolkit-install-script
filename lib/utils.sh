@@ -49,8 +49,32 @@ util_is_wsl() {
 }
 
 # ==============================================================================
-# APT Lock Handling
+# APT Lock Handling - IMPROVED
 # ==============================================================================
+
+util_apt_lock_acquire() {
+    # Try to acquire APT lock by running a dummy apt-get command
+    local max_wait=300  # 5 minutes
+    local waited=0
+    
+    while [[ $waited -lt $max_wait ]]; do
+        # Try to acquire lock by running apt-get check
+        if sudo flock -n /var/lib/dpkg/lock-frontend true 2>/dev/null; then
+            return 0
+        fi
+        
+        if (( waited % 10 == 0 )); then
+            log_info "Waiting for APT lock... (${waited}s/${max_wait}s)"
+            util_log_apt_lock_holders
+        fi
+        
+        sleep 2
+        ((waited+=2))
+    done
+    
+    log_error "Timeout waiting for APT lock after ${max_wait}s"
+    return 1
+}
 
 util_wait_for_apt_lock() {
     local max_wait=300  # 5 minutes
@@ -83,6 +107,7 @@ util_wait_for_apt_lock() {
         if ! util_get_apt_lock_holders >/dev/null 2>&1; then
             printf '\r\033[K'
             log_success "APT lock released"
+            sleep 1  # Brief pause to ensure lock is fully released
             return 0
         fi
 
@@ -735,12 +760,12 @@ util_setup_go_env() {
         log_info "Created $HOME/.bashrc"
     fi
     
-    # Go environment configuration
+    # Go environment configuration - FIXED: Use literal variables, not command substitution
     local go_config='
 # Go Programming Language Configuration
-export PATH=$PATH:/usr/local/go/bin
-export PATH=$PATH:$(go env GOPATH)/bin
-export GOPATH=$(go env GOPATH)
+export GOROOT="/usr/local/go"
+export GOPATH="${HOME}/go"
+export PATH="${PATH}:${GOROOT}/bin:${GOPATH}/bin"
 '
     
     for rc_file in "${rc_files[@]}"; do
@@ -755,11 +780,9 @@ export GOPATH=$(go env GOPATH)
     done
     
     # Add to current session PATH
-    export PATH="/usr/local/go/bin:$PATH"
-    if command -v go &>/dev/null; then
-        export PATH="$(go env GOPATH)/bin:$PATH"
-        export GOPATH="$(go env GOPATH)"
-    fi
+    export GOROOT="/usr/local/go"
+    export GOPATH="${HOME}/go"
+    export PATH="/usr/local/go/bin:${GOPATH}/bin:$PATH"
     
     log_success "Go environment configured"
     log_info "Note: Run 'source ~/.zshrc' or 'source ~/.bashrc' to apply changes"

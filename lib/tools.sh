@@ -277,11 +277,12 @@ tool_install_go() {
     fi
     
     local temp_file=$(util_create_temp_file "go-${go_version}.tar.gz")
+    local checksum_url="https://go.dev/dl/go${go_version}.linux-amd64.tar.gz.sha256"
     
-    # Download Go
-    if ! ui_exec_with_progress "Downloading Go ${go_version}" \
-        curl -sSL -o "$temp_file" "$go_url"; then
-        log_error "Failed to download Go"
+    # Download Go with checksum verification
+    log_info "Downloading and verifying Go ${go_version}..."
+    if ! util_download_verify "$go_url" "$temp_file" "$checksum_url" "Go ${go_version}"; then
+        log_error "Failed to download or verify Go"
         rm -f "$temp_file"
         return 1
     fi
@@ -430,44 +431,84 @@ tool_install_go_tools() {
 
     mapfile -t go_tool_names < <(printf "%s\n" "${!GO_TOOLS[@]}" | sort)
     local total=${#go_tool_names[@]}
-    local current=0
-
+    
     log_info "Installing $total Go-based security tools..."
-    echo ""
-
-    for tool_pkg in "${go_tool_names[@]}"; do
-        ((current++))
-
-        local tool_info="${GO_TOOLS[$tool_pkg]}"
-        local tool_path="${tool_info%%|*}"
-        local description="${tool_info##*|}"
-        local progress_label="Installing ${tool_pkg}"
-
-        log_info "[$current/$total] $tool_pkg: $description"
-
-        if [[ "$DRY_RUN" == "false" ]]; then
-            if ui_run_with_live_progress "$current" "$total" "$progress_label" go install -v "$tool_path"; then
-                local tool_binary="$(go env GOPATH)/bin/$tool_pkg"
-                if [[ -f "$tool_binary" ]]; then
-                    local version=$(util_get_tool_version "$tool_pkg" 2>/dev/null || echo "latest")
-                    util_manifest_add_tool "go_tools" "$tool_pkg" "$version" "$tool_binary"
-                    echo -e "    ${DIM}Binary: $tool_binary${NC}"
-                    echo -e "    ${DIM}Version: $version${NC}"
-                else
-                    log_error "Binary missing after installation: $tool_pkg"
-                    echo -e "    ${RED}✗${NC} Binary not found at $(go env GOPATH)/bin/$tool_pkg"
-                    failed_tools+=("$tool_pkg")
-                fi
+    
+    # IMPROVEMENT: Option to install in parallel
+    local parallel_jobs=1
+    if [[ "${GO_TOOLS_PARALLEL:-false}" == "true" ]]; then
+        parallel_jobs=$(nproc 2>/dev/null || echo 2)
+        ((parallel_jobs > 4)) && parallel_jobs=4  # Limit to 4 parallel jobs
+        log_info "Using ${parallel_jobs} parallel installation jobs"
+    fi
+    
+    if [[ $parallel_jobs -gt 1 ]] && command -v xargs &>/dev/null; then
+        # Parallel installation
+        log_info "Installing tools in parallel (${parallel_jobs} jobs)..."
+        printf "%s\n" "${go_tool_names[@]}" | xargs -P "$parallel_jobs" -I {} bash -c '
+            tool_pkg="$1"
+            tool_info="${GO_TOOLS[$tool_pkg]}"
+            tool_path="${tool_info%%|*}"
+            
+            if go install -v "$tool_path" 2>&1 | grep -v "^#"; then
+                echo "✓ $tool_pkg installed successfully"
+            else
+                echo "✗ $tool_pkg installation failed" >&2
+                exit 1
+            fi
+        ' _ {} || {
+            log_warning "Some parallel installations may have failed"
+        }
+        
+        # Verify installations
+        for tool_pkg in "${go_tool_names[@]}"; do
+            local tool_binary="$(go env GOPATH)/bin/$tool_pkg"
+            if [[ -f "$tool_binary" ]]; then
+                local version=$(util_get_tool_version "$tool_pkg" 2>/dev/null || echo "latest")
+                util_manifest_add_tool "go_tools" "$tool_pkg" "$version" "$tool_binary"
             else
                 failed_tools+=("$tool_pkg")
             fi
-        else
-            log_info "[DRY RUN] Would install: $tool_path"
-            ui_progress_finalize "$current" "$total" "$current" "$ICON_INFO" "$BLUE" "$progress_label" " ${DIM}[DRY RUN]${NC}"
-        fi
-
+        done
+    else
+        # Sequential installation (original behavior)
+        local current=0
         echo ""
-    done
+
+        for tool_pkg in "${go_tool_names[@]}"; do
+            ((current++))
+
+            local tool_info="${GO_TOOLS[$tool_pkg]}"
+            local tool_path="${tool_info%%|*}"
+            local description="${tool_info##*|}"
+            local progress_label="Installing ${tool_pkg}"
+
+            log_info "[$current/$total] $tool_pkg: $description"
+
+            if [[ "$DRY_RUN" == "false" ]]; then
+                if ui_run_with_live_progress "$current" "$total" "$progress_label" go install -v "$tool_path"; then
+                    local tool_binary="$(go env GOPATH)/bin/$tool_pkg"
+                    if [[ -f "$tool_binary" ]]; then
+                        local version=$(util_get_tool_version "$tool_pkg" 2>/dev/null || echo "latest")
+                        util_manifest_add_tool "go_tools" "$tool_pkg" "$version" "$tool_binary"
+                        echo -e "    ${DIM}Binary: $tool_binary${NC}"
+                        echo -e "    ${DIM}Version: $version${NC}"
+                    else
+                        log_error "Binary missing after installation: $tool_pkg"
+                        echo -e "    ${RED}✗${NC} Binary not found at $(go env GOPATH)/bin/$tool_pkg"
+                        failed_tools+=("$tool_pkg")
+                    fi
+                else
+                    failed_tools+=("$tool_pkg")
+                fi
+            else
+                log_info "[DRY RUN] Would install: $tool_path"
+                ui_progress_finalize "$current" "$total" "$current" "$ICON_INFO" "$BLUE" "$progress_label" " ${DIM}[DRY RUN]${NC}"
+            fi
+
+            echo ""
+        done
+    fi
 
     echo ""
 
@@ -486,6 +527,8 @@ tool_install_go_tools() {
     log_info "═══════════════════════════════════════"
 
     rollback_add "tool_uninstall_go_tools"
+    
+    # Return success even if some tools failed (non-fatal)
     return 0
 }
 
