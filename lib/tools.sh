@@ -463,11 +463,18 @@ tool_install_go_tools() {
         local filled=$((percent * 50 / 100))
         local empty=$((50 - filled))
         
-        printf "\n${BLUE}[${NC}"
-        printf "%${filled}s" | tr ' ' '█'
-        printf "%${empty}s" | tr ' ' '░'
-        printf "${BLUE}]${NC} %3d%% (%d/%d) ${YELLOW}⚙${NC} Installing ${CYAN}%s${NC}...\n" \
-            "$percent" "$current" "$total" "$tool_pkg"
+        # Generate progress bar characters
+        local filled_bar=$(printf "█%.0s" $(seq 1 "$filled" 2>/dev/null))
+        local empty_bar=$(printf "░%.0s" $(seq 1 "$empty" 2>/dev/null))
+        
+        # Color based on percentage
+        local bar_color="$RED"
+        [[ $percent -ge 75 ]] && bar_color="$GREEN"
+        [[ $percent -ge 50 && $percent -lt 75 ]] && bar_color="$YELLOW"
+        [[ $percent -ge 25 && $percent -lt 50 ]] && bar_color="$BLUE"
+        
+        printf "\n${CYAN}[${bar_color}%s${CYAN}%s${NC}] %3d%% (%d/%d) ${YELLOW}⚙${NC}  Installing ${CYAN}%s${NC}...\n" \
+            "$filled_bar" "$empty_bar" "$percent" "$current" "$total" "$tool_pkg"
         
         log_info "[$current/$total] $tool_pkg: $description"
         
@@ -563,11 +570,18 @@ tool_install_python_tools() {
         local filled=$((percent * 50 / 100))
         local empty=$((50 - filled))
         
-        printf "\n${BLUE}[${NC}"
-        printf "%${filled}s" | tr ' ' '█'
-        printf "%${empty}s" | tr ' ' '░'
-        printf "${BLUE}]${NC} %3d%% (%d/%d) ${YELLOW}🐍${NC} Installing ${CYAN}%s${NC}...\n" \
-            "$percent" "$current" "$total" "$tool_name"
+        # Generate progress bar characters
+        local filled_bar=$(printf "█%.0s" $(seq 1 "$filled" 2>/dev/null))
+        local empty_bar=$(printf "░%.0s" $(seq 1 "$empty" 2>/dev/null))
+        
+        # Color based on percentage
+        local bar_color="$RED"
+        [[ $percent -ge 75 ]] && bar_color="$GREEN"
+        [[ $percent -ge 50 && $percent -lt 75 ]] && bar_color="$YELLOW"
+        [[ $percent -ge 25 && $percent -lt 50 ]] && bar_color="$BLUE"
+        
+        printf "\n${CYAN}[${bar_color}%s${CYAN}%s${NC}] %3d%% (%d/%d) ${YELLOW}🐍${NC}  Installing ${CYAN}%s${NC}...\n" \
+            "$filled_bar" "$empty_bar" "$percent" "$current" "$total" "$tool_name"
         
         log_info "[$current/$total] $tool_name: $description"
         
