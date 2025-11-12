@@ -34,17 +34,21 @@ tool_install_zsh() {
                 return 1
             }
             
-            # Update package lists with progress
-            if ! ui_exec_with_progress "Updating package lists" sudo apt-get update -qq; then
+            # Update package lists with real-time progress
+            echo -e "${BLUE}➜${NC} Updating package lists..."
+            if ! sudo apt-get update 2>&1 | grep -v "^$"; then
                 log_warning "Package list update had warnings (continuing...)"
             fi
             
-            # Install packages with progress
-            if ! ui_exec_with_progress "Installing ZSH packages (${#packages[@]} packages)" \
-                sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${packages[@]}"; then
+            # Install packages with real-time output
+            echo -e "${BLUE}➜${NC} Installing ZSH packages (${#packages[@]} packages)..."
+            if ! sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}" 2>&1 | \
+                grep -E "(Setting up|Unpacking|Processing|Preparing|Reading)" || true; then
                 log_error "Failed to install packages"
                 return 1
             fi
+            
+            log_success "ZSH and packages installed successfully"
         else
             log_info "[DRY RUN] Would update package lists"
             log_info "[DRY RUN] Would install: ${packages[*]}"
@@ -437,52 +441,50 @@ tool_install_go_tools() {
         local tool_path="${tool_info%%|*}"
         local description="${tool_info##*|}"
         
+        # Show progress header
+        local percent=$((current * 100 / total))
+        local filled=$((percent * 50 / 100))
+        local empty=$((50 - filled))
+        
+        printf "\n${BLUE}[${NC}"
+        printf "%${filled}s" | tr ' ' '█'
+        printf "%${empty}s" | tr ' ' '░'
+        printf "${BLUE}]${NC} %3d%% (%d/%d) ${YELLOW}⚙${NC} Installing ${CYAN}%s${NC}...\n" \
+            "$percent" "$current" "$total" "$tool_pkg"
+        
+        log_info "[$current/$total] $tool_pkg: $description"
+        
         if [[ "$DRY_RUN" == "false" ]]; then
-            # Show progress with spinner
-            ui_progress_with_spinner "$current" "$total" "Installing $tool_pkg..."
-            echo ""
-            log_info "[$current/$total] $tool_pkg: $description"
+            # Install with real-time verbose output
+            echo -e "  ${DIM}↓ Downloading and compiling...${NC}"
             
-            # Install tool in background and show spinner
-            (
-                go install -v "$tool_path" 2>&1 | tee -a "$LOG_FILE"
-            ) &
-            local install_pid=$!
-            
-            # Show spinner while installing
-            local spinner_chars="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-            local spinner_idx=0
-            while kill -0 $install_pid 2>/dev/null; do
-                local sp="${spinner_chars:$spinner_idx:1}"
-                printf "\r  ${YELLOW}%s${NC} Downloading and compiling..." "$sp"
-                spinner_idx=$(( (spinner_idx + 1) % ${#spinner_chars} ))
-                sleep 0.1
+            local install_success=true
+            go install -v "$tool_path" 2>&1 | while IFS= read -r line; do
+                # Show download and compilation progress
+                if [[ "$line" =~ "go: downloading" ]]; then
+                    echo -e "    ${BLUE}↓${NC} ${DIM}${line}${NC}"
+                elif [[ "$line" =~ "# " ]]; then
+                    echo -e "    ${YELLOW}⚙${NC} ${DIM}${line}${NC}"
+                fi
             done
             
-            wait $install_pid
-            local install_result=$?
+            local install_result=${PIPESTATUS[0]}
             
             # Check if tool was installed
             local tool_binary="$(go env GOPATH)/bin/$tool_pkg"
             if [[ -f "$tool_binary" ]] && [[ $install_result -eq 0 ]]; then
-                printf "\r  ${GREEN}✓${NC} Successfully installed $tool_pkg\n"
+                echo -e "  ${GREEN}✓${NC} Successfully installed ${CYAN}$tool_pkg${NC}"
                 local version=$(util_get_tool_version "$tool_pkg" 2>/dev/null || echo "latest")
                 util_manifest_add_tool "go_tools" "$tool_pkg" "$version" "$tool_binary"
             else
-                printf "\r  ${RED}✗${NC} Failed to install $tool_pkg\n"
+                echo -e "  ${RED}✗${NC} Failed to install $tool_pkg"
                 failed_tools+=("$tool_pkg")
             fi
         else
-            ui_progress_bar "$current" "$total" "$tool_pkg"
-            echo ""
-            log_info "[DRY RUN] Would install: $tool_pkg ($tool_path)"
+            echo -e "  ${DIM}[DRY RUN] Would install: $tool_pkg ($tool_path)${NC}"
         fi
-        
-        echo "" # Spacing between tools
     done
     
-    # Final progress bar
-    ui_progress_bar "$total" "$total" "Complete"
     echo ""
     
     # Summary
@@ -525,6 +527,13 @@ tool_install_python_tools() {
     
     local total=${#PYTHON_TOOLS[@]}
     local current=0
+    local failed_tools=()
+    
+    echo ""
+    echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║${NC}  Installing Python Tools with Virtual Environments    ${BLUE}║${NC}"
+    echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
+    echo ""
     
     for tool_name in "${!PYTHON_TOOLS[@]}"; do
         ((current++))
@@ -532,7 +541,18 @@ tool_install_python_tools() {
         local tool_info="${PYTHON_TOOLS[$tool_name]}"
         IFS='|' read -r install_type repo_url description requirements install_script <<< "$tool_info"
         
-        ui_progress_bar "$current" "$total" "Installing $tool_name"
+        # Show progress header
+        local percent=$((current * 100 / total))
+        local filled=$((percent * 50 / 100))
+        local empty=$((50 - filled))
+        
+        printf "\n${BLUE}[${NC}"
+        printf "%${filled}s" | tr ' ' '█'
+        printf "%${empty}s" | tr ' ' '░'
+        printf "${BLUE}]${NC} %3d%% (%d/%d) ${YELLOW}🐍${NC} Installing ${CYAN}%s${NC}...\n" \
+            "$percent" "$current" "$total" "$tool_name"
+        
+        log_info "[$current/$total] $tool_name: $description"
         
         local tool_dir="$TOOLS_DIR/$tool_name"
         
@@ -541,47 +561,100 @@ tool_install_python_tools() {
             continue
         fi
         
-        log_info "Installing $tool_name: $description"
-        
         if [[ "$DRY_RUN" == "true" ]]; then
-            log_info "[DRY RUN] Would install: $tool_name"
+            echo -e "  ${DIM}[DRY RUN] Would install: $tool_name${NC}"
             continue
         fi
         
-        # Clone repository
-        if ! util_git_clone "$repo_url" "$tool_dir" "$tool_name"; then
+        # Clone repository with real-time output
+        echo -e "  ${BLUE}↓${NC} Cloning repository..."
+        if ! git clone --depth 1 "$repo_url" "$tool_dir" 2>&1 | grep -E "(Cloning|Receiving|Resolving)" | while IFS= read -r line; do
+            echo -e "    ${DIM}${line}${NC}"
+        done; then
             log_error "Failed to clone $tool_name"
+            failed_tools+=("$tool_name")
             continue
         fi
         
-        # Setup virtual environment if requirements exist
-        if [[ -n "$requirements" ]] && [[ -f "$tool_dir/$requirements" ]]; then
-            log_info "Creating virtual environment for $tool_name..."
-            cd "$tool_dir" || continue
-            
-            python3 -m venv "${tool_name}Env" &>/dev/null &
-            ui_spinner $! "Creating venv for $tool_name"
-            
-            # shellcheck disable=SC1091
-            source "${tool_name}Env/bin/activate"
-            pip install --upgrade pip setuptools wheel &>/dev/null
-            pip install -r "$requirements" &>/dev/null &
-            ui_spinner $! "Installing Python dependencies for $tool_name"
-            
-            # Run install script if exists
-            if [[ -n "$install_script" ]] && [[ -f "$install_script" ]]; then
-                bash "$install_script" &>/dev/null
-            fi
-            
-            deactivate
+        # Navigate to tool directory
+        cd "$tool_dir" || {
+            log_error "Failed to navigate to $tool_dir"
+            failed_tools+=("$tool_name")
+            continue
+        }
+        
+        # Create virtual environment
+        echo -e "  ${YELLOW}⚙${NC} Creating virtual environment..."
+        if ! python3 -m venv venv 2>&1 | grep -v "^$"; then
+            log_error "Failed to create virtual environment for $tool_name"
             cd "$original_dir" || return 1
+            failed_tools+=("$tool_name")
+            continue
         fi
         
-        log_success "$tool_name installed"
+        # Activate virtual environment
+        echo -e "  ${GREEN}✓${NC} Activating virtual environment..."
+        source venv/bin/activate || {
+            log_error "Failed to activate virtual environment for $tool_name"
+            cd "$original_dir" || return 1
+            failed_tools+=("$tool_name")
+            continue
+        }
+        
+        # Upgrade pip in venv
+        echo -e "  ${BLUE}↑${NC} Upgrading pip..."
+        pip install --upgrade pip 2>&1 | grep -E "(Successfully|Requirement already)" | while IFS= read -r line; do
+            echo -e "    ${DIM}${line}${NC}"
+        done
+        
+        # Install requirements if exist
+        if [[ -f "requirements.txt" ]]; then
+            echo -e "  ${YELLOW}⚙${NC} Installing Python dependencies from requirements.txt..."
+            if pip install --upgrade -r requirements.txt 2>&1 | grep -E "(Successfully installed|Requirement already|Collecting)" | while IFS= read -r line; do
+                echo -e "    ${DIM}${line}${NC}"
+            done; then
+                echo -e "  ${GREEN}✓${NC} Dependencies installed successfully"
+            else
+                echo -e "  ${RED}✗${NC} Failed to install dependencies for $tool_name"
+                deactivate
+                cd "$original_dir" || return 1
+                failed_tools+=("$tool_name")
+                continue
+            fi
+        fi
+        
+        # Run install script if exists
+        if [[ -n "$install_script" ]] && [[ -f "$install_script" ]]; then
+            echo -e "  ${YELLOW}⚙${NC} Running installation script..."
+            bash "$install_script" 2>&1 | while IFS= read -r line; do
+                echo -e "    ${DIM}${line}${NC}"
+            done
+        fi
+        
+        # Deactivate virtual environment
+        deactivate
+        echo -e "  ${GREEN}✓${NC} Successfully installed ${CYAN}$tool_name${NC}"
+        echo -e "  ${DIM}Location: $tool_dir${NC}"
+        echo -e "  ${DIM}To use: cd $tool_dir && source venv/bin/activate${NC}"
+        
+        # Return to original directory
+        cd "$original_dir" || return 1
+        
         util_manifest_add_tool "python_tools" "$tool_name" "git-latest" "$tool_dir"
     done
     
-    echo # New line after progress bar
+    echo ""
+    
+    # Summary
+    local success_count=$((total - ${#failed_tools[@]}))
+    log_info "═══════════════════════════════════════"
+    log_info "Python Tools Installation Summary:"
+    log_success "  Successful: $success_count/$total tools"
+    if [[ ${#failed_tools[@]} -gt 0 ]]; then
+        log_error "  Failed: ${#failed_tools[@]} tools"
+        log_warning "  Failed tools: ${failed_tools[*]}"
+    fi
+    log_info "═══════════════════════════════════════"
     
     rollback_add "tool_uninstall_python_tools"
     return 0
