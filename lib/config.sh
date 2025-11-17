@@ -39,18 +39,6 @@ readonly USER_WORDLISTS_DIR="${USER_WORDLISTS_DIR:-${WORDLISTS_DIR}}"
 readonly USER_SCRIPTS_DIR="${USER_SCRIPTS_DIR:-${SCRIPTS_DIR}}"
 
 # Colors (ANSI escape codes)
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly PURPLE='\033[0;35m'
-readonly CYAN='\033[0;36m'
-readonly WHITE='\033[1;37m'
-readonly GRAY='\033[0;90m'
-readonly DIM='\033[2m'
-readonly NC='\033[0m' # No Color
-
-# Respect NO_COLOR and non-interactive environments to avoid leaking escape codes
 if [[ -n "${NO_COLOR:-}" || ! -t 1 ]]; then
     readonly RED=''
     readonly GREEN=''
@@ -62,6 +50,17 @@ if [[ -n "${NO_COLOR:-}" || ! -t 1 ]]; then
     readonly GRAY=''
     readonly DIM=''
     readonly NC=''
+else
+    readonly RED=$'\033[0;31m'
+    readonly GREEN=$'\033[0;32m'
+    readonly YELLOW=$'\033[1;33m'
+    readonly BLUE=$'\033[0;34m'
+    readonly PURPLE=$'\033[0;35m'
+    readonly CYAN=$'\033[0;36m'
+    readonly WHITE=$'\033[1;37m'
+    readonly GRAY=$'\033[0;90m'
+    readonly DIM=$'\033[2m'
+    readonly NC=$'\033[0m' # No Color
 fi
 
 # Icons and symbols

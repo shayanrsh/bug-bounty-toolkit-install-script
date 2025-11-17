@@ -896,20 +896,33 @@ util_manifest_set_step() {
 
     if util_command_exists jq; then
         local temp_file
-        temp_file=$(mktemp)
-        jq --arg id "$step_id" \
-           --arg status "$status" \
-           --arg desc "$description" \
-           --arg detail "$detail" \
-           '.steps[$id] = {
-                status: $status,
-                description: $desc,
-                detail: $detail,
-                updated: (now | strftime("%Y-%m-%dT%H:%M:%SZ"))
-            }' \
-            "$MANIFEST_FILE" > "$temp_file"
-        mv "$temp_file" "$MANIFEST_FILE"
+        temp_file=$(mktemp) || {
+            log_warning "Unable to create temp file for manifest step update"
+            return 0
+        }
+
+        if jq --arg id "$step_id" \
+              --arg status "$status" \
+              --arg desc "$description" \
+              --arg detail "$detail" \
+              '.steps[$id] = {
+                    status: $status,
+                    description: $desc,
+                    detail: $detail,
+                    updated: (now | strftime("%Y-%m-%dT%H:%M:%SZ"))
+                }' \
+                "$MANIFEST_FILE" > "$temp_file"; then
+            mv "$temp_file" "$MANIFEST_FILE"
+        else
+            log_warning "Failed to update manifest (jq error); keeping previous file"
+            rm -f "$temp_file"
+        fi
+    else
+        printf '%s|%s|%s|%s|%s\n' "$step_id" "$status" "$description" "$detail" \
+            "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> "${MANIFEST_FILE}.steps"
     fi
+
+    return 0
 }
 
 util_generate_manifest() {
