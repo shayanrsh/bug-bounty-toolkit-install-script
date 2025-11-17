@@ -373,13 +373,13 @@ ui_progress_board_render() {
 
     local lines=0
     printf '\r\033[K%s╭──────────────────────── %s ────────────────────────╮%s\n' "$CYAN" "$mode_label" "$NC"
-    ((lines++))
+    lines=$((lines + 1))
 
     printf '\r\033[K%s│%s %-70s %s│%s\n' "$CYAN" "$NC" "$(ui_progress_board_bar_line)" "$CYAN" "$NC"
-    ((lines++))
+    lines=$((lines + 1))
 
     printf '\r\033[K%s├──────────────────────────────────────────────────────────────┤%s\n' "$CYAN" "$NC"
-    ((lines++))
+    lines=$((lines + 1))
 
     local index=1
     for tool_id in "${PROGRESS_BOARD_ORDER[@]}"; do
@@ -392,12 +392,12 @@ ui_progress_board_render() {
         [[ ${#note_trim} -gt 30 ]] && note_trim="${note_trim:0:27}..."
         printf '\r\033[K%s│%s %2d. %-22s %s %s %3d%% %-30s %s│%s\n' \
             "$CYAN" "$NC" "$index" "$label" "$icon" "$(ui_progress_board_tool_bar "$percent" "$status")" "$percent" "$note_trim" "$CYAN" "$NC"
-        ((lines++))
-        ((index++))
+        lines=$((lines + 1))
+        index=$((index + 1))
     done
 
     printf '\r\033[K%s╰──────────────────────────────────────────────────────────────╯%s\n' "$CYAN" "$NC"
-    ((lines++))
+    lines=$((lines + 1))
 
     if [[ "$PROGRESS_BOARD_CAN_REWRITE" == "true" ]]; then
         PROGRESS_BOARD_LAST_LINES=$lines

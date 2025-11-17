@@ -479,8 +479,13 @@ util_package_available() {
         return 0
     fi
 
-    # apt-cache policy returns non-zero if the package is not found in cache
-    if apt-cache policy "$pkg" >/dev/null 2>&1; then
+    # Use apt-cache policy to determine candidate; Candidate: (none) means not available
+    if util_command_exists apt-cache; then
+        local candidate
+        candidate=$(apt-cache policy "$pkg" 2>/dev/null | awk '/Candidate:/ {print $2}' || true)
+        if [[ -z "$candidate" ]] || [[ "$candidate" == "(none)" ]]; then
+            return 1
+        fi
         return 0
     fi
 
