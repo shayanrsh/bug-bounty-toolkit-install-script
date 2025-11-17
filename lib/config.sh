@@ -50,6 +50,20 @@ readonly GRAY='\033[0;90m'
 readonly DIM='\033[2m'
 readonly NC='\033[0m' # No Color
 
+# Respect NO_COLOR and non-interactive environments to avoid leaking escape codes
+if [[ -n "${NO_COLOR:-}" || ! -t 1 ]]; then
+    readonly RED=''
+    readonly GREEN=''
+    readonly YELLOW=''
+    readonly BLUE=''
+    readonly PURPLE=''
+    readonly CYAN=''
+    readonly WHITE=''
+    readonly GRAY=''
+    readonly DIM=''
+    readonly NC=''
+fi
+
 # Icons and symbols
 readonly ICON_SUCCESS="✅"
 readonly ICON_ERROR="❌"

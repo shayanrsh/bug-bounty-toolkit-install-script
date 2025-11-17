@@ -657,12 +657,24 @@ util_download_verify() {
         local checksum_file="${output}.sha256"
         if util_download "$checksum_url" "$checksum_file" "Checksum"; then
             log_info "Verifying checksum..."
-            if sha256sum -c "$checksum_file" &>/dev/null; then
+            local expected_sum
+            expected_sum=$(awk 'NF>=1 {print $1; exit}' "$checksum_file")
+
+            if [[ -z "$expected_sum" ]]; then
+                log_error "Checksum file from $checksum_url is empty or malformed"
+                rm -f "$output" "$checksum_file"
+                return 1
+            fi
+
+            local actual_sum
+            actual_sum=$(sha256sum "$output" | awk '{print $1}')
+
+            if [[ "$expected_sum" == "$actual_sum" ]]; then
                 log_success "Checksum verification passed"
                 rm -f "$checksum_file"
                 return 0
             else
-                log_error "Checksum verification failed"
+                log_error "Checksum verification failed (expected $expected_sum, got $actual_sum)"
                 rm -f "$output" "$checksum_file"
                 return 1
             fi
