@@ -92,7 +92,7 @@ util_apt_update() {
         return 1
     fi
     
-    if sudo apt-get update 2>&1 | tee -a "$LOG_FILE" | grep -q "^Reading"; then
+    if sudo apt-get update 2>&1 | tee -a "$LOG_FILE"; then
         APT_UPDATED=true
         log_success "Package lists updated successfully"
         return 0
@@ -467,6 +467,26 @@ util_get_version_specific_package() {
             ;;
     esac
 }
+
+util_package_available() {
+    local pkg="$1"
+
+    if [[ -z "$pkg" ]]; then
+        return 1
+    fi
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        return 0
+    fi
+
+    # apt-cache policy returns non-zero if the package is not found in cache
+    if apt-cache policy "$pkg" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    return 1
+}
+
 
 util_check_prerequisites() {
     local missing_commands=()

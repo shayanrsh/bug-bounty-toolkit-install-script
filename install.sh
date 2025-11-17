@@ -103,6 +103,10 @@ error_handler() {
     local exit_code=$2
     
     log_error "Script failed at line $line_no with exit code $exit_code"
+    log_error "Last executed command: ${BASH_COMMAND:-unknown}"
+    log_error "Call stack (most recent call first):"
+    local i=0
+    while caller $i; do ((i++)); done
     ui_show_error "Installation failed unexpectedly" "Check the log file for details: $LOG_FILE"
     
     if [[ ${#ROLLBACK_STACK[@]} -gt 0 ]]; then

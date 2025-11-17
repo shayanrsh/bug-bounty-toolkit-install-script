@@ -21,9 +21,18 @@ tool_install_zsh() {
     
     local packages=()
     for pkg in "${!ZSH_PACKAGES[@]}"; do
-        if ! util_package_installed "${ZSH_PACKAGES[$pkg]}"; then
-            packages+=("${ZSH_PACKAGES[$pkg]}")
+        local pkgname="${ZSH_PACKAGES[$pkg]}"
+        if util_package_installed "$pkgname"; then
+            log_debug "ZSH package already installed: $pkgname"
+            continue
         fi
+
+        if ! util_package_available "$pkgname"; then
+            log_warning "APT package not available: $pkgname (skipping)"
+            continue
+        fi
+
+        packages+=("$pkgname")
     done
     
     if [[ ${#packages[@]} -gt 0 ]]; then
@@ -82,14 +91,16 @@ tool_install_zsh() {
     # Set ZSH as default shell (following https://itsfoss.com/zsh-ubuntu/)
     if [[ "$DRY_RUN" == "false" ]] && [[ "$INTERACTIVE" == "true" ]]; then
         if ui_confirm "Set ZSH as default shell?" "y"; then
-            if chsh -s /bin/zsh; then
+            local zsh_path
+            zsh_path=$(command -v zsh 2>/dev/null || true)
+            if [[ -n "$zsh_path" ]] && chsh -s "$zsh_path" "$(whoami)"; then
                 # Verify ZSH was set as default
-                if grep -q "^$(whoami):" /etc/passwd | grep -q "/bin/zsh"; then
+                local current_shell
+                current_shell=$(getent passwd "$(whoami)" | cut -d: -f7)
+                if [[ "$current_shell" == "$zsh_path" ]]; then
                     log_success "ZSH successfully set as default shell"
                     ui_tool_progress_phase "$tool_id" 95 "Default shell updated"
                 else
-                    local current_shell
-                    current_shell=$(getent passwd "$(whoami)" | cut -d: -f7)
                     log_warning "ZSH set command executed, but current shell is still: $current_shell"
                     log_info "Please logout and login again for changes to take effect"
                 fi
@@ -135,6 +146,12 @@ tool_install_ohmyzsh() {
         chmod +x "$install_script"
         RUNZSH=no CHSH=no KEEP_ZSHRC=yes sh "$install_script" &>/dev/null &
         ui_spinner $! "Installing Oh My ZSH"
+        local spinner_rc=$?
+        if [[ $spinner_rc -ne 0 ]]; then
+            log_error "Oh My ZSH installation failed (exit ${spinner_rc})"
+            rm -f "$install_script"
+            return 1
+        fi
         rm -f "$install_script"
         
         log_success "Oh My ZSH installed"
