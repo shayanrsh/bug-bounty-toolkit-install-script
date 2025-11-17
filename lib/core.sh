@@ -396,7 +396,9 @@ core_execute_installation_steps() {
         progress_steps+=("${fn}|${description}|${weight}")
     done
 
-    ui_progress_board_init "$INSTALL_MODE" progress_steps
+    if ! ui_progress_board_init "$INSTALL_MODE" progress_steps; then
+        log_debug "Progress board unavailable for this session (non-TTY or disabled)"
+    fi
     
     local current_step=0
     local start_time=$(date +%s)
