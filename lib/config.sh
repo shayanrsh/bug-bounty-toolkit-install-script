@@ -78,6 +78,22 @@ readonly ICON_ROCKET="🚀"
 # Progress bar configuration
 readonly PROGRESS_BAR_WIDTH=50
 readonly SPINNER_CHARS="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+PROGRESS_BOARD_ENABLED=${PROGRESS_BOARD_ENABLED:-true}
+readonly PROGRESS_DEFAULT_TOOL_WEIGHT=1
+
+declare -A TOOL_WEIGHTS=(
+    ["tool_install_zsh"]=2
+    ["tool_install_go"]=3
+    ["tool_install_rust"]=2
+    ["tool_install_go_tools"]=4
+    ["tool_install_python_tools"]=4
+    ["tool_install_rust_tools"]=2
+    ["tool_install_apt_tools"]=3
+    ["tool_install_snap_tools"]=1
+    ["tool_install_pipx_tools"]=2
+    ["tool_install_wordlists"]=5
+    ["tool_create_helper_scripts"]=1
+)
 
 # System requirements
 readonly MIN_DISK_SPACE_GB=5

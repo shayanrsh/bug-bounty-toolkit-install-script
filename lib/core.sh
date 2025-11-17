@@ -382,6 +382,21 @@ core_execute_installation_steps() {
         log_warning "core_execute_installation_steps: No steps to execute"
         return 0
     fi
+
+    local progress_steps=()
+    for step_info in "${steps_ref[@]}"; do
+        IFS=':' read -r fn description <<< "$step_info"
+        local weight=${TOOL_WEIGHTS[$fn]:-$PROGRESS_DEFAULT_TOOL_WEIGHT}
+        if [[ -z "$weight" || ! "$weight" =~ ^[0-9]+$ ]]; then
+            weight=$PROGRESS_DEFAULT_TOOL_WEIGHT
+        fi
+        if (( weight <= 0 )); then
+            weight=$PROGRESS_DEFAULT_TOOL_WEIGHT
+        fi
+        progress_steps+=("${fn}|${description}|${weight}")
+    done
+
+    ui_progress_board_init "$INSTALL_MODE" progress_steps
     
     local current_step=0
     local start_time=$(date +%s)
@@ -408,27 +423,31 @@ core_execute_installation_steps() {
             fi
         fi
 
-        ui_step_header "$current_step" "$total_steps" "$description"
-
-        if [[ "$skip_due_to_target" == "true" ]]; then
-            log_info "Skipping $description (waiting for resume target $RESUME_TARGET)"
-            continue
-        fi
-
         local recorded_status=""
         if [[ "$RESUME_MODE" == "true" ]]; then
             recorded_status=$(util_state_get_step_status "$function_name")
         fi
 
+        ui_step_header "$current_step" "$total_steps" "$description"
+
+        if [[ "$skip_due_to_target" == "true" ]]; then
+            log_info "Skipping $description (waiting for resume target $RESUME_TARGET)"
+            ui_progress_board_tool_update "$function_name" "pending" 0 "Awaiting resume target $RESUME_TARGET"
+            continue
+        fi
+
         if [[ "$recorded_status" == "completed" ]]; then
             log_info "$description already completed, skipping"
+            ui_progress_board_tool_update "$function_name" "completed" 100 "Previously completed"
             continue
         fi
         
         if [[ "$recorded_status" == "running" ]]; then
             log_warning "$description appears to have been interrupted previously; retrying"
+            ui_progress_board_tool_update "$function_name" "running" 10 "Resuming interrupted step"
         elif [[ "$recorded_status" == "failed" ]]; then
             log_warning "$description previously failed; retrying"
+            ui_progress_board_tool_update "$function_name" "running" 10 "Retrying after failure"
         fi
         
         # Show ETA
@@ -445,16 +464,26 @@ core_execute_installation_steps() {
         fi
 
         util_state_mark_step "$function_name" "running" "$description"
+        local step_start_ts=$(date +%s)
+        if [[ "$DRY_RUN" == "true" ]]; then
+            ui_progress_board_tool_update "$function_name" "running" 15 "[DRY RUN] Simulating"
+        else
+            ui_progress_board_tool_update "$function_name" "running" 15 "Starting"
+        fi
 
         if "$function_name"; then
             util_state_mark_step "$function_name" "completed" "$description"
             installed_tools+=("$description")
             log_success "$description completed"
+            local elapsed=$(( $(date +%s) - step_start_ts ))
+            ui_progress_board_tool_update "$function_name" "completed" 100 "Completed in ${elapsed}s"
         else
             local exit_code=$?
             util_state_mark_step "$function_name" "failed" "$description" "exit_code=${exit_code}"
             log_error "$description failed"
             failed=true
+            local elapsed=$(( $(date +%s) - step_start_ts ))
+            ui_progress_board_tool_update "$function_name" "failed" 100 "Failed (code ${exit_code}, ${elapsed}s)"
             
             if [[ "$INTERACTIVE" == "true" ]]; then
                 if ! ui_confirm "Continue with remaining steps?" "y"; then

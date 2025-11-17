@@ -12,7 +12,9 @@
 # ==============================================================================
 
 tool_install_zsh() {
+    local tool_id="${FUNCNAME[0]}"
     ui_section_header "Installing ZSH Environment" "$BLUE"
+    ui_tool_progress_phase "$tool_id" 10 "Checking required packages"
     
     # Install ZSH and required packages
     log_info "Installing ZSH and prerequisites..."
@@ -25,6 +27,7 @@ tool_install_zsh() {
     done
     
     if [[ ${#packages[@]} -gt 0 ]]; then
+        ui_tool_progress_phase "$tool_id" 30 "Installing packages (${#packages[@]})"
         log_info "Installing ${#packages[@]} package(s): ${packages[*]}"
         
         if [[ "$DRY_RUN" == "false" ]]; then
@@ -45,6 +48,7 @@ tool_install_zsh() {
                 return 1
             fi
             log_success "ZSH and packages installed successfully"
+            ui_tool_progress_phase "$tool_id" 45 "Core packages installed"
         else
             log_info "[DRY RUN] Would update package lists"
             log_info "[DRY RUN] Would install: ${packages[*]}"
@@ -64,12 +68,15 @@ tool_install_zsh() {
     fi
     
     # Install Oh My ZSH
+    ui_tool_progress_phase "$tool_id" 55 "Installing Oh My ZSH"
     tool_install_ohmyzsh || return 1
     
     # Install ZSH plugins
+    ui_tool_progress_phase "$tool_id" 70 "Installing ZSH plugins"
     tool_install_zsh_plugins || return 1
     
     # Configure ZSH
+    ui_tool_progress_phase "$tool_id" 85 "Configuring ZSH"
     tool_configure_zsh || return 1
     
     # Set ZSH as default shell (following https://itsfoss.com/zsh-ubuntu/)
@@ -79,6 +86,7 @@ tool_install_zsh() {
                 # Verify ZSH was set as default
                 if grep -q "^$(whoami):" /etc/passwd | grep -q "/bin/zsh"; then
                     log_success "ZSH successfully set as default shell"
+                    ui_tool_progress_phase "$tool_id" 95 "Default shell updated"
                 else
                     local current_shell
                     current_shell=$(getent passwd "$(whoami)" | cut -d: -f7)
@@ -244,10 +252,12 @@ tool_uninstall_zsh() {
 # ==============================================================================
 
 tool_install_go() {
+    local tool_id="${FUNCNAME[0]}"
     ui_section_header "Installing Go Programming Language" "$PURPLE"
     
     # Fetch latest Go version from go.dev
     log_info "Fetching latest Go version from go.dev..."
+    ui_tool_progress_phase "$tool_id" 10 "Checking latest version"
     local go_version
     go_version=$(curl -sSL 'https://go.dev/VERSION?m=text' 2>/dev/null | head -n1 | sed 's/go//')
     
@@ -280,11 +290,13 @@ tool_install_go() {
     fi
     
     log_info "Installing Go $go_version..."
+    ui_tool_progress_phase "$tool_id" 25 "Preparing installation"
     
     if [[ "$DRY_RUN" == "true" ]]; then
         log_info "[DRY RUN] Would download: $go_url"
         log_info "[DRY RUN] Would install Go $go_version to /usr/local/go"
         log_info "[DRY RUN] Would configure environment variables"
+        ui_tool_progress_phase "$tool_id" 90 "[DRY RUN] Installation simulated"
         return 0
     fi
     
@@ -294,14 +306,17 @@ tool_install_go() {
     
     # Download Go with checksum verification
     log_info "Downloading and verifying Go ${go_version}..."
+    ui_tool_progress_phase "$tool_id" 40 "Downloading archive"
     if ! util_download_verify "$go_url" "$temp_file" "$checksum_url" "Go ${go_version}" "$checksum_fallback_url"; then
         log_error "Failed to download or verify Go"
         rm -f "$temp_file"
         return 1
     fi
+    ui_tool_progress_phase "$tool_id" 60 "Checksum verified"
     
     # Remove old installation
     if [[ -d /usr/local/go ]]; then
+        ui_tool_progress_phase "$tool_id" 65 "Removing previous installation"
         if ! ui_exec_with_progress "Removing old Go installation" \
             sudo rm -rf /usr/local/go; then
             log_warning "Failed to remove old Go installation (continuing...)"
@@ -309,6 +324,7 @@ tool_install_go() {
     fi
     
     # Extract Go
+    ui_tool_progress_phase "$tool_id" 75 "Extracting archive"
     if ! ui_exec_with_progress "Extracting Go ${go_version}" \
         sudo tar -C /usr/local -xzf "$temp_file"; then
         log_error "Failed to extract Go"
@@ -321,6 +337,7 @@ tool_install_go() {
     # Verify installation
     if /usr/local/go/bin/go version &>/dev/null; then
         local installed_version=$(/usr/local/go/bin/go version | awk '{print $3}' | sed 's/go//')
+        ui_tool_progress_phase "$tool_id" 90 "Configuring environment"
         log_success "Go ${installed_version} installed successfully"
         
         # Setup environment variables
@@ -328,6 +345,7 @@ tool_install_go() {
         
         # Add to manifest
         util_manifest_add_tool "languages" "go" "$installed_version" "/usr/local/go"
+        ui_tool_progress_phase "$tool_id" 95 "Go ready"
         rollback_add "tool_uninstall_go"
         return 0
     else
@@ -336,7 +354,8 @@ tool_install_go() {
     fi
 }
 
-tool_uninstall_go() {
+tool_install_pipx_tools() {
+    local tool_id="${FUNCNAME[0]}"
     log_warning "Uninstalling Go..."
     [[ "$DRY_RUN" == "false" ]] && sudo rm -rf /usr/local/go
 }
@@ -346,24 +365,33 @@ tool_uninstall_go() {
 # ==============================================================================
 
 tool_install_rust() {
+    local tool_id="${FUNCNAME[0]}"
+            ui_tool_progress_phase "$tool_id" 30 "pipx installed"
     ui_section_header "Installing Rust Programming Language" "$CYAN"
     
+            ui_tool_progress_phase "$tool_id" 30 "[DRY RUN] pipx install"
     if util_command_exists rustc; then
         local version=$(util_get_tool_version rustc)
         log_success "Rust $version is already installed"
         
+    ui_tool_progress_phase "$tool_id" 40 "Installing pipx tools"
         if [[ "$INTERACTIVE" == "true" ]]; then
             if ui_confirm "Update Rust to latest version?" "n"; then
                 [[ "$DRY_RUN" == "false" ]] && rustup update
+                ui_tool_progress_phase "$tool_id" 60 "Updating existing Rust toolchain"
             fi
         fi
+                ui_tool_progress_phase "$tool_id" 60 "Installed $tool"
         return 0
     fi
     
     log_info "Installing Rust..."
+    ui_tool_progress_phase "$tool_id" 20 "Downloading rustup"
+            ui_tool_progress_phase "$tool_id" 60 "[DRY RUN] $tool"
     
     if [[ "$DRY_RUN" == "true" ]]; then
         log_info "[DRY RUN] Would install Rust"
+    ui_tool_progress_phase "$tool_id" 85 "pipx tools processed"
         return 0
     fi
     
@@ -392,9 +420,11 @@ tool_install_rust() {
             return 1
         fi
         log_success "Checksum verified successfully"
+        ui_tool_progress_phase "$tool_id" 45 "Checksum verified"
     fi
     
     chmod +x "$rust_installer"
+    ui_tool_progress_phase "$tool_id" 65 "Running rustup installer"
     "$rust_installer" -y --default-toolchain stable &>/dev/null &
     ui_spinner $! "Installing Rust"
     rm -f "$rust_installer" "$rust_checksum"
@@ -405,6 +435,7 @@ tool_install_rust() {
     if util_command_exists rustc; then
         local version=$(util_get_tool_version rustc)
         log_success "Rust $version installed successfully"
+        ui_tool_progress_phase "$tool_id" 90 "Rust toolchain installed"
         util_manifest_add_tool "languages" "rust" "$version" "$HOME/.cargo"
         rollback_add "tool_uninstall_rust"
         return 0
@@ -425,11 +456,14 @@ tool_uninstall_rust() {
 
 tool_install_rust_tools() {
     ui_section_header "Installing Rust-based Security Tools" "$CYAN"
+    local tool_id="${FUNCNAME[0]}"
+    ui_tool_progress_phase "$tool_id" 15 "Verifying cargo"
     
     # Ensure Rust is installed
     if ! util_command_exists cargo; then
         log_error "Rust/Cargo is not installed. Installing Rust first..."
         tool_install_rust || return 1
+        ui_tool_progress_phase "$tool_id" 30 "Rust installed"
     fi
     
     # Source Rust environment
@@ -512,7 +546,9 @@ tool_uninstall_rust_tools() {
 # ==============================================================================
 
 tool_install_go_tools() {
+    local tool_id="${FUNCNAME[0]}"
     ui_section_header "Installing Go-based Security Tools" "$GREEN"
+    ui_tool_progress_phase "$tool_id" 10 "Validating Go toolchain"
 
     # Ensure Go is installed
     if ! util_command_exists go; then
@@ -525,6 +561,7 @@ tool_install_go_tools() {
 
     # Install system dependencies for specific tools
     log_info "Checking system dependencies..."
+    ui_tool_progress_phase "$tool_id" 20 "Checking dependencies"
     local deps_needed=()
 
     # naabu requires libpcap
@@ -537,6 +574,7 @@ tool_install_go_tools() {
     # Install dependencies if needed
     if [[ ${#deps_needed[@]} -gt 0 ]]; then
         log_info "Installing system dependencies: ${deps_needed[*]}"
+        ui_tool_progress_phase "$tool_id" 30 "Installing dependencies"
         util_wait_for_apt_lock || {
             log_warning "APT lock could not be acquired for dependency install"
             return 1
@@ -553,6 +591,7 @@ tool_install_go_tools() {
     local total=${#go_tool_names[@]}
     
     log_info "Installing $total Go-based security tools..."
+    ui_tool_progress_phase "$tool_id" 40 "Installing toolchain ($total tools)"
     
     # IMPROVEMENT: Option to install in parallel
     local parallel_jobs=1
@@ -565,6 +604,7 @@ tool_install_go_tools() {
     if [[ $parallel_jobs -gt 1 ]] && command -v xargs &>/dev/null; then
         # Parallel installation
         log_info "Installing tools in parallel (${parallel_jobs} jobs)..."
+        ui_tool_progress_phase "$tool_id" 55 "Parallel installation running"
         printf "%s\n" "${go_tool_names[@]}" | xargs -P "$parallel_jobs" -I {} bash -c '
             tool_pkg="$1"
             tool_info="${GO_TOOLS[$tool_pkg]}"
@@ -597,6 +637,11 @@ tool_install_go_tools() {
 
         for tool_pkg in "${go_tool_names[@]}"; do
             ((current+=1))
+            local seq_percent=40
+            if (( total > 0 )); then
+                seq_percent=$((45 + (current * 45 / total)))
+            fi
+            ui_tool_progress_phase "$tool_id" "$seq_percent" "Installing ${tool_pkg}"
 
             local tool_info="${GO_TOOLS[$tool_pkg]}"
             local tool_path="${tool_info%%|*}"
@@ -672,6 +717,7 @@ tool_install_go_tools() {
         fi
     fi
     log_info "  Time elapsed: ${elapsed}s"
+    ui_tool_progress_phase "$tool_id" 90 "Go tools installed (${success_count}/${total})"
     log_info "═══════════════════════════════════════"
 
     rollback_add "tool_uninstall_go_tools"
@@ -695,7 +741,9 @@ tool_uninstall_go_tools() {
 # ==============================================================================
 
 tool_install_python_tools() {
+    local tool_id="${FUNCNAME[0]}"
     ui_section_header "Installing Python-based Security Tools" "$YELLOW"
+    ui_tool_progress_phase "$tool_id" 10 "Preparing directories"
     
     mkdir -p "$TOOLS_DIR"
     local original_dir=$(pwd)
@@ -733,6 +781,7 @@ tool_install_python_tools() {
         
         printf "\n${CYAN}[${bar_color}%s${CYAN}%s${NC}] %3d%% (%d/%d) ${YELLOW}🐍${NC}  Installing ${CYAN}%s${NC}...\n" \
             "$filled_bar" "$empty_bar" "$percent" "$current" "$total" "$tool_name"
+        ui_tool_progress_phase "$tool_id" "$percent" "Installing ${tool_name}"
         
         log_info "[$current/$total] $tool_name: $description"
         
@@ -830,6 +879,7 @@ tool_install_python_tools() {
     # Summary
     local success_count=$((total - ${#failed_tools[@]}))
     log_info "═══════════════════════════════════════"
+    ui_tool_progress_phase "$tool_id" 90 "Python tools installed (${success_count}/${total})"
     log_info "Python Tools Installation Summary:"
     log_success "  Successful: $success_count/$total tools"
     if [[ ${#failed_tools[@]} -gt 0 ]]; then
@@ -852,7 +902,9 @@ tool_uninstall_python_tools() {
 # ==============================================================================
 
 tool_install_apt_tools() {
+    local tool_id="${FUNCNAME[0]}"
     ui_section_header "Installing Tools via APT" "$BLUE"
+    ui_tool_progress_phase "$tool_id" 15 "Checking installed packages"
     
     local packages=()
     for pkg in "${!APT_TOOLS[@]}"; do
@@ -863,6 +915,7 @@ tool_install_apt_tools() {
     
     if [[ ${#packages[@]} -eq 0 ]]; then
         log_success "All APT tools already installed"
+        ui_tool_progress_phase "$tool_id" 80 "Packages already installed"
         return 0
     fi
     
@@ -873,46 +926,56 @@ tool_install_apt_tools() {
             log_error "Unable to acquire APT lock"
             return 1
         }
+        ui_tool_progress_phase "$tool_id" 35 "Updating package cache"
         if ! util_apt_update; then
             log_error "Failed to update package lists"
             return 1
         fi
+        ui_tool_progress_phase "$tool_id" 55 "Installing APT packages"
         if ! ui_stream_command "Installing APT packages" sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"; then
             log_error "Failed to install APT packages"
             return 1
         fi
         log_success "APT tools installed"
+        ui_tool_progress_phase "$tool_id" 85 "APT packages installed"
     else
         log_info "[DRY RUN] Would install: ${packages[*]}"
+        ui_tool_progress_phase "$tool_id" 85 "[DRY RUN] Packages simulated"
     fi
     
     return 0
 }
 
 tool_install_snap_tools() {
+    local tool_id="${FUNCNAME[0]}"
     if util_is_wsl; then
         log_warning "WSL detected - snap tools may have limited functionality"
         log_warning "Skipping snap installations on WSL (systemd required)"
         ui_info "Snap tools skipped on WSL"
+        ui_tool_progress_phase "$tool_id" 80 "Skipped on WSL"
         return 0
     fi
-    
+    ui_tool_progress_phase "$tool_id" 20 "Installing snap packages"
     for tool in "${!SNAP_TOOLS[@]}"; do
         if [[ "$DRY_RUN" == "false" ]]; then
             if ! snap list "$tool" &>/dev/null; then
                 log_info "Installing $tool via snap..."
                 sudo snap install "$tool" &>/dev/null &
                 ui_spinner $! "Installing $tool"
+                ui_tool_progress_phase "$tool_id" 60 "Installed $tool"
             fi
         else
             log_info "[DRY RUN] Would install snap: $tool"
+            ui_tool_progress_phase "$tool_id" 60 "[DRY RUN] $tool"
         fi
     done
+    ui_tool_progress_phase "$tool_id" 85 "Snap tools processed"
     
     return 0
 }
 
 tool_install_pipx_tools() {
+    local tool_id="${FUNCNAME[0]}"
     # Ensure pipx is installed
     if ! util_command_exists pipx; then
         log_info "Installing pipx..."
@@ -922,22 +985,32 @@ tool_install_pipx_tools() {
                 log_error "Failed to install pipx"
                 return 1
             fi
+            ui_tool_progress_phase "$tool_id" 30 "pipx installed"
+        else
+            log_info "[DRY RUN] Would install pipx"
+            ui_tool_progress_phase "$tool_id" 30 "[DRY RUN] pipx"
         fi
         pipx ensurepath &>/dev/null
     fi
     
+    ui_tool_progress_phase "$tool_id" 45 "Installing pipx tools"
     for tool in "${!PIPX_TOOLS[@]}"; do
         if [[ "$DRY_RUN" == "false" ]]; then
             if ! pipx list 2>/dev/null | grep -q "^  package $tool "; then
                 log_info "Installing $tool via pipx..."
                 pipx install "$tool" &>/dev/null &
                 ui_spinner $! "Installing $tool"
+                ui_tool_progress_phase "$tool_id" 60 "Installed $tool"
+            else
+                log_info "$tool already installed via pipx"
             fi
         else
             log_info "[DRY RUN] Would install pipx: $tool"
+            ui_tool_progress_phase "$tool_id" 60 "[DRY RUN] $tool"
         fi
     done
     
+    ui_tool_progress_phase "$tool_id" 85 "pipx tools processed"
     return 0
 }
 
@@ -946,7 +1019,9 @@ tool_install_pipx_tools() {
 # ==============================================================================
 
 tool_install_wordlists() {
+    local tool_id="${FUNCNAME[0]}"
     ui_section_header "Installing Wordlists" "$PURPLE"
+    ui_tool_progress_phase "$tool_id" 10 "Preparing directories"
     
     mkdir -p "$WORDLISTS_DIR"
     local original_dir=$(pwd)
@@ -960,6 +1035,8 @@ tool_install_wordlists() {
         
         local wordlist_info="${WORDLISTS[$wordlist_name]}"
         IFS='|' read -r url type dest <<< "$wordlist_info"
+        local percent=$((current * 100 / total))
+        ui_tool_progress_phase "$tool_id" "$percent" "Installing ${wordlist_name}"
         
         if [[ "$DRY_RUN" == "true" ]]; then
             log_info "[DRY RUN] Would install wordlist: $wordlist_name"
@@ -996,6 +1073,7 @@ tool_install_wordlists() {
     cd "$original_dir" || return 1
     
     log_success "Wordlists installed at $WORDLISTS_DIR"
+    ui_tool_progress_phase "$tool_id" 90 "Wordlists ready"
     rollback_add "tool_uninstall_wordlists"
     return 0
 }
@@ -1010,9 +1088,11 @@ tool_uninstall_wordlists() {
 # ==============================================================================
 
 tool_create_helper_scripts() {
+    local tool_id="${FUNCNAME[0]}"
     mkdir -p "$SCRIPTS_DIR"
     
     log_info "Creating helper scripts..."
+    ui_tool_progress_phase "$tool_id" 20 "Writing helper scripts"
     
     # Python environment activation helper
     cat > "$SCRIPTS_DIR/activate_python_tools.sh" << 'EOF'
@@ -1053,6 +1133,7 @@ fi
 EOF
     
     chmod +x "$SCRIPTS_DIR/activate_python_tools.sh"
+    ui_tool_progress_phase "$tool_id" 45 "Activate script ready"
     
     # Security aliases
     cat > "$HOME/.security_aliases" << 'EOF'
@@ -1076,5 +1157,6 @@ alias l='ls -CF'
 EOF
     
     log_success "Helper scripts created"
+    ui_tool_progress_phase "$tool_id" 85 "Helper scripts ready"
     return 0
 }
