@@ -77,7 +77,7 @@ plugin_discover() {
             plugin_name=$(basename "$plugin_file" .sh)
             
             if plugin_load "$plugin_name" "$plugin_file"; then
-                ((loaded_count++))
+                ((loaded_count+=1))
             fi
         done < <(find "$dir" -maxdepth 1 -name "*.sh" -type f -print0 2>/dev/null)
     done

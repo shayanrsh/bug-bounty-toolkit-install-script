@@ -144,7 +144,7 @@ tool_install_zsh_plugins() {
     local current=0
     
     for plugin_name in "${!ZSH_PLUGINS[@]}"; do
-        ((current++))
+        ((current+=1))
         
         local plugin_url="${ZSH_PLUGINS[$plugin_name]}"
         local plugin_dir
@@ -445,7 +445,7 @@ tool_install_rust_tools() {
     echo ""
     
     for tool_pkg in "${rust_tool_names[@]}"; do
-        ((current++))
+        ((current+=1))
         
         local tool_info="${RUST_TOOLS[$tool_pkg]}"
         IFS='|' read -r install_method package description <<< "$tool_info"
@@ -595,7 +595,7 @@ tool_install_go_tools() {
         echo ""
 
         for tool_pkg in "${go_tool_names[@]}"; do
-            ((current++))
+            ((current+=1))
 
             local tool_info="${GO_TOOLS[$tool_pkg]}"
             local tool_path="${tool_info%%|*}"
@@ -710,7 +710,7 @@ tool_install_python_tools() {
     echo ""
     
     for tool_name in "${!PYTHON_TOOLS[@]}"; do
-        ((current++))
+        ((current+=1))
         
         local tool_info="${PYTHON_TOOLS[$tool_name]}"
         IFS='|' read -r install_type repo_url description requirements install_script <<< "$tool_info"
@@ -955,7 +955,7 @@ tool_install_wordlists() {
     local current=0
     
     for wordlist_name in "${!WORDLISTS[@]}"; do
-        ((current++))
+        ((current+=1))
         
         local wordlist_info="${WORDLISTS[$wordlist_name]}"
         IFS='|' read -r url type dest <<< "$wordlist_info"

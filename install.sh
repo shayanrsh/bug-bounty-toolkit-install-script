@@ -12,8 +12,8 @@
 #
 # ==============================================================================
 
-# Strict error handling
-set -euo pipefail
+# Strict error handling (propagate ERR traps within functions)
+set -Eeuo pipefail
 IFS=$'\n\t'
 
 # Check Bash version (require 4.0+)

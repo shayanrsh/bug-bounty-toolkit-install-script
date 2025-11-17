@@ -395,7 +395,7 @@ core_execute_installation_steps() {
     fi
     
     for step_info in "${steps_ref[@]}"; do
-        ((current_step++))
+        ((++current_step))
         
         IFS=':' read -r function_name description <<< "$step_info"
 

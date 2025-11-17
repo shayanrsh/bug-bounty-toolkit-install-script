@@ -553,7 +553,7 @@ util_retry() {
             return 1
         fi
         
-        ((attempt++))
+        ((attempt+=1))
     done
     
     return 1
@@ -1394,7 +1394,7 @@ util_for_each_with_progress() {
     local failed=()
     
     for item in "${items[@]}"; do
-        ((current++))
+        ((current+=1))
         ui_progress_bar "$current" "$total" "$description: $item"
         
         if ! "$callback" "$item"; then
