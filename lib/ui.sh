@@ -77,8 +77,6 @@ log_error()   { _log_message "ERROR"   "$RED"    "$ICON_ERROR"   "$1"; }
 
 PROGRESS_BOARD_ACTIVE=false
 PROGRESS_BOARD_MODE=""
-PROGRESS_BOARD_TOP_ROW=0
-PROGRESS_BOARD_LAST_LINES=0
 PROGRESS_BOARD_TOTAL_WEIGHT=0
 PROGRESS_BOARD_FINISHED_WEIGHT=0
 PROGRESS_BOARD_FINISHED_COUNT=0
@@ -86,6 +84,8 @@ PROGRESS_BOARD_SUCCESS_COUNT=0
 PROGRESS_BOARD_FAILED_COUNT=0
 PROGRESS_BOARD_SKIPPED_COUNT=0
 PROGRESS_BOARD_DRY_RUN=false
+PROGRESS_BOARD_LAST_LINES=0
+PROGRESS_BOARD_CAN_REWRITE=true
 
 declare -a PROGRESS_BOARD_ORDER=()
 declare -A PROGRESS_BOARD_LABELS=()
@@ -113,31 +113,14 @@ declare -A PROGRESS_STATUS_COLORS=(
     [rollback]="$BLUE"
 )
 
-ui_terminal_get_cursor_position() {
-    if [[ ! -t 1 ]]; then
-        return 1
-    fi
-
-    printf '\033[6n' > /dev/tty 2>/dev/null || return 1
-    local row col
-    IFS=';' read -sdR row col < /dev/tty || return 1
-    row=${row#*[}
-    col=${col%R}
-    printf '%s;%s' "$row" "$col"
-    return 0
-}
-
 ui_progress_board_supported() {
-    [[ "$PROGRESS_BOARD_ENABLED" == "true" && -t 1 && -n "$TERM" ]] || return 1
-    command -v tput >/dev/null 2>&1 || return 1
+    [[ "$PROGRESS_BOARD_ENABLED" == "true" ]] || return 1
     return 0
 }
 
 ui_progress_board_reset_state() {
     PROGRESS_BOARD_ACTIVE=false
     PROGRESS_BOARD_MODE=""
-    PROGRESS_BOARD_TOP_ROW=0
-    PROGRESS_BOARD_LAST_LINES=0
     PROGRESS_BOARD_TOTAL_WEIGHT=0
     PROGRESS_BOARD_FINISHED_WEIGHT=0
     PROGRESS_BOARD_FINISHED_COUNT=0
@@ -145,6 +128,8 @@ ui_progress_board_reset_state() {
     PROGRESS_BOARD_FAILED_COUNT=0
     PROGRESS_BOARD_SKIPPED_COUNT=0
     PROGRESS_BOARD_DRY_RUN=false
+    PROGRESS_BOARD_LAST_LINES=0
+    PROGRESS_BOARD_CAN_REWRITE=true
     PROGRESS_BOARD_ORDER=()
     PROGRESS_BOARD_LABELS=()
     PROGRESS_BOARD_STATUS=()
@@ -208,14 +193,6 @@ ui_progress_board_init() {
     done
 
     echo
-    local cursor_pos
-    cursor_pos=$(ui_terminal_get_cursor_position) || {
-        ui_progress_board_reset_state
-        return 1
-    }
-    PROGRESS_BOARD_TOP_ROW=${cursor_pos%%;*}
-    [[ -z "$PROGRESS_BOARD_TOP_ROW" ]] && PROGRESS_BOARD_TOP_ROW=1
-
     ui_progress_board_render true
     return 0
 }
@@ -227,6 +204,18 @@ ui_progress_board_status_icon() {
     [[ -z "$icon" ]] && icon="○"
     [[ -z "$color" ]] && color="$WHITE"
     printf '%s%s%s' "$color" "$icon" "$NC"
+}
+
+ui_progress_board_default_message() {
+    local status="$1"
+    case "$status" in
+        running)  echo "Running" ;;
+        completed) echo "Completed" ;;
+        failed) echo "Failed" ;;
+        skipped) echo "Skipped" ;;
+        rollback) echo "Rolling back" ;;
+        *) echo "Pending" ;;
+    esac
 }
 
 ui_progress_board_mark_finished() {
@@ -270,6 +259,8 @@ ui_progress_board_tool_update() {
     PROGRESS_BOARD_PERCENT["$tool_id"]=$safe_percent
     if [[ -n "$message" ]]; then
         PROGRESS_BOARD_MESSAGES["$tool_id"]="$message"
+    else
+        PROGRESS_BOARD_MESSAGES["$tool_id"]="$(ui_progress_board_default_message "$status")"
     fi
 
     case "$status" in
@@ -282,17 +273,26 @@ ui_progress_board_tool_update() {
 }
 
 ui_progress_board_bar_line() {
-    local finished_weight=$PROGRESS_BOARD_FINISHED_WEIGHT
     local total_weight=$PROGRESS_BOARD_TOTAL_WEIGHT
     (( total_weight <= 0 )) && total_weight=1
-    local percent=$((finished_weight * 100 / total_weight))
+
+    local scaled_weight=$((PROGRESS_BOARD_FINISHED_WEIGHT * 100))
+    for tool_id in "${PROGRESS_BOARD_ORDER[@]}"; do
+        if [[ "${PROGRESS_BOARD_FINALIZED[$tool_id]:-false}" != "true" ]]; then
+            local weight=${PROGRESS_BOARD_WEIGHTS[$tool_id]:-$PROGRESS_DEFAULT_TOOL_WEIGHT}
+            local percent=${PROGRESS_BOARD_PERCENT[$tool_id]:-0}
+            scaled_weight=$((scaled_weight + percent * weight))
+        fi
+    done
+
+    local percent=$((scaled_weight / total_weight))
     (( percent > 100 )) && percent=100
 
     local completed=${PROGRESS_BOARD_FINISHED_COUNT:-0}
     local total_steps=${#PROGRESS_BOARD_ORDER[@]}
     (( total_steps <= 0 )) && total_steps=1
 
-    local bar_width=30
+    local bar_width=36
     local filled=$((percent * bar_width / 100))
     (( filled > bar_width )) && filled=$bar_width
     local empty=$((bar_width - filled))
@@ -302,24 +302,58 @@ ui_progress_board_bar_line() {
     local empty_bar=""
     (( empty > 0 )) && printf -v empty_bar '%*s' "$empty" '' && empty_bar=${empty_bar// /░}
 
-    printf '%s[%s%s]%s %3d%% (%d/%d) success:%d failed:%d skipped:%d' \
+    printf '%s[%s%s]%s %3d%% (%d/%d) ok:%d fail:%d skip:%d' \
         "$CYAN" "$GREEN$filled_bar" "$CYAN$empty_bar" "$NC" \
         "$percent" "$completed" "$total_steps" \
         "$PROGRESS_BOARD_SUCCESS_COUNT" "$PROGRESS_BOARD_FAILED_COUNT" "$PROGRESS_BOARD_SKIPPED_COUNT"
 }
 
-ui_progress_board_render() {
-    local initial="$1"
+ui_progress_board_tool_bar() {
+    local percent="$1"
+    local status="$2"
+    local width=20
 
+    local filled=$((percent * width / 100))
+    (( filled > width )) && filled=$width
+    (( filled < 0 )) && filled=0
+    local empty=$((width - filled))
+
+    local filled_bar=""
+    (( filled > 0 )) && printf -v filled_bar '%*s' "$filled" '' && filled_bar=${filled_bar// /█}
+    local empty_bar=""
+    (( empty > 0 )) && printf -v empty_bar '%*s' "$empty" '' && empty_bar=${empty_bar// /░}
+
+    local color="$BLUE"
+    case "$status" in
+        completed) color="$GREEN" ;;
+        failed) color="$RED" ;;
+        skipped) color="$PURPLE" ;;
+        running) color="$YELLOW" ;;
+        rollback) color="$BLUE" ;;
+        *) color="$GRAY" ;;
+    esac
+
+    printf '%s[%s%s%s]%s' "$CYAN" "$color$filled_bar" "$CYAN$empty_bar" "$CYAN" "$NC"
+}
+
+ui_progress_board_render() {
     if [[ "$PROGRESS_BOARD_ACTIVE" != "true" ]]; then
         return
     fi
 
-    local top_row=$((PROGRESS_BOARD_TOP_ROW - 1))
-    (( top_row < 0 )) && top_row=0
+    if (( PROGRESS_BOARD_LAST_LINES > 0 )) && [[ "$PROGRESS_BOARD_CAN_REWRITE" == "true" ]]; then
+        if command -v tput >/dev/null 2>&1; then
+            if ! tput cuu "$PROGRESS_BOARD_LAST_LINES" >/dev/null 2>&1; then
+                PROGRESS_BOARD_CAN_REWRITE=false
+            fi
+        else
+            PROGRESS_BOARD_CAN_REWRITE=false
+        fi
+    fi
 
-    tput sc
-    tput cup "$top_row" 0
+    if [[ "$PROGRESS_BOARD_CAN_REWRITE" != "true" ]] && (( PROGRESS_BOARD_LAST_LINES > 0 )); then
+        printf '\n'
+    fi
 
     local mode_label="${PROGRESS_BOARD_MODE:-Installation Progress}"
     if [[ "$PROGRESS_BOARD_DRY_RUN" == "true" ]]; then
@@ -330,7 +364,7 @@ ui_progress_board_render() {
     printf '\r\033[K%s╭──────────────────────── %s ────────────────────────╮%s\n' "$CYAN" "$mode_label" "$NC"
     ((lines++))
 
-    printf '\r\033[K%s│%s %-60s %s│%s\n' "$CYAN" "$NC" "$(ui_progress_board_bar_line)" "$CYAN" "$NC"
+    printf '\r\033[K%s│%s %-70s %s│%s\n' "$CYAN" "$NC" "$(ui_progress_board_bar_line)" "$CYAN" "$NC"
     ((lines++))
 
     printf '\r\033[K%s├──────────────────────────────────────────────────────────────┤%s\n' "$CYAN" "$NC"
@@ -343,11 +377,10 @@ ui_progress_board_render() {
         local percent=${PROGRESS_BOARD_PERCENT[$tool_id]}
         local note=${PROGRESS_BOARD_MESSAGES[$tool_id]}
         local icon=$(ui_progress_board_status_icon "$status")
-        local message=$(printf '%-20s' "$label")
         local note_trim="$note"
-        [[ ${#note_trim} -gt 38 ]] && note_trim="${note_trim:0:35}..."
-        printf '\r\033[K%s│%s %2d. %-24s %s %3d%% %-38s %s│%s\n' \
-            "$CYAN" "$NC" "$index" "$label" "$icon" "$percent" "$note_trim" "$CYAN" "$NC"
+        [[ ${#note_trim} -gt 30 ]] && note_trim="${note_trim:0:27}..."
+        printf '\r\033[K%s│%s %2d. %-22s %s %s %3d%% %-30s %s│%s\n' \
+            "$CYAN" "$NC" "$index" "$label" "$icon" "$(ui_progress_board_tool_bar "$percent" "$status")" "$percent" "$note_trim" "$CYAN" "$NC"
         ((lines++))
         ((index++))
     done
@@ -355,16 +388,11 @@ ui_progress_board_render() {
     printf '\r\033[K%s╰──────────────────────────────────────────────────────────────╯%s\n' "$CYAN" "$NC"
     ((lines++))
 
-    if (( PROGRESS_BOARD_LAST_LINES > lines )); then
-        local extra=$((PROGRESS_BOARD_LAST_LINES - lines))
-        while ((extra > 0)); do
-            printf '\r\033[K\n'
-            extra=$((extra - 1))
-        done
+    if [[ "$PROGRESS_BOARD_CAN_REWRITE" == "true" ]]; then
+        PROGRESS_BOARD_LAST_LINES=$lines
+    else
+        PROGRESS_BOARD_LAST_LINES=0
     fi
-
-    PROGRESS_BOARD_LAST_LINES=$lines
-    tput rc
 }
 
 ui_tool_progress_phase() {

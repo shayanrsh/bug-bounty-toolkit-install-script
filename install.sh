@@ -255,25 +255,39 @@ interactive_menu() {
     echo "  u) Uninstall All"
     echo "  q) Quit"
     echo ""
-    
-    read -rp "Select an option: " choice
-    
-    case "$choice" in
-        1) INSTALL_MODE="full" ;;
-        2) INSTALL_MODE="zsh" ;;
-        3) INSTALL_MODE="tools" ;;
-        4) INSTALL_MODE="go_tools" ;;
-        5) INSTALL_MODE="python_tools" ;;
-        6) INSTALL_MODE="wordlists" ;;
-        7) INSTALL_MODE="profile"; PROFILE="minimal" ;;
-        8) INSTALL_MODE="profile"; PROFILE="pentest" ;;
-        9) INSTALL_MODE="profile"; PROFILE="developer" ;;
-        10) INSTALL_MODE="custom" ;;
-        11) INSTALL_MODE="update" ;;
-        u|U) INSTALL_MODE="uninstall" ;;
-        q|Q) exit 0 ;;
-        *) echo "Invalid option"; exit 1 ;;
-    esac
+
+    echo -e "${GRAY}How to choose:${NC}"
+    echo -e "${GRAY}- Type the number or shortcut shown above, then press Enter.${NC}"
+    echo -e "${GRAY}- Example: enter '1' for a full install, '10' for custom, 'u' to uninstall.${NC}"
+    echo -e "${GRAY}- Enter 'q' at any time to exit without making changes.${NC}"
+    echo
+
+    local choice=""
+    while true; do
+        read -r -p "$(echo -e "${YELLOW}Select an option [1-11, u, q]: ${NC}")" choice
+        choice="${choice//[[:space:]]/}"
+        if [[ -z "$choice" ]]; then
+            echo -e "${RED}Please enter a value from the menu.${NC}"
+            continue
+        fi
+
+        case "${choice,,}" in
+            1) INSTALL_MODE="full"; break ;;
+            2) INSTALL_MODE="zsh"; break ;;
+            3) INSTALL_MODE="tools"; break ;;
+            4) INSTALL_MODE="go_tools"; break ;;
+            5) INSTALL_MODE="python_tools"; break ;;
+            6) INSTALL_MODE="wordlists"; break ;;
+            7) INSTALL_MODE="profile"; PROFILE="minimal"; break ;;
+            8) INSTALL_MODE="profile"; PROFILE="pentest"; break ;;
+            9) INSTALL_MODE="profile"; PROFILE="developer"; break ;;
+            10) INSTALL_MODE="custom"; break ;;
+            11) INSTALL_MODE="update"; break ;;
+            u) INSTALL_MODE="uninstall"; break ;;
+            q) exit 0 ;;
+            *) echo -e "${RED}Invalid selection '${choice}'. Choose from 1-11, u, or q.${NC}" ;;
+        esac
+    done
 }
 
 # ==============================================================================

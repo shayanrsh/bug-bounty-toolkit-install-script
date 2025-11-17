@@ -321,7 +321,48 @@ core_install_profile() {
 core_install_custom() {
     ui_menu_custom
     
-    read -p "Enter component numbers (space-separated): " -a selections
+    echo -e "${GRAY}Type the numbers for the components you want, separated by spaces.${NC}"
+    echo -e "${GRAY}Example: '1 4 5' installs ZSH, Go tools, and Go security tools.${NC}"
+    echo -e "${GRAY}Enter '9' for the full toolkit or 'q' to return to the main menu.${NC}"
+
+    local selection_line=""
+    local selections=()
+    while true; do
+        read -r -p "$(echo -e "${YELLOW}Custom selection: ${NC}")" selection_line
+
+        # Trim whitespace-only answers
+        if [[ -z "${selection_line//[[:space:]]/}" ]]; then
+            log_warning "Please enter at least one component number."
+            continue
+        fi
+
+        if [[ "${selection_line,,}" == "q" ]]; then
+            log_info "Custom installation cancelled by user."
+            return 1
+        fi
+
+        read -r -a selections <<< "$selection_line"
+
+        local invalid_token=""
+        for selection in "${selections[@]}"; do
+            if [[ ! "$selection" =~ ^[0-9]+$ ]]; then
+                invalid_token="$selection"
+                break
+            fi
+            if (( selection < 1 || selection > 9 )); then
+                invalid_token="$selection"
+                break
+            fi
+        done
+
+        if [[ -n "$invalid_token" ]]; then
+            log_warning "'${invalid_token}' is not a valid option. Use numbers 1-9 or 'q' to cancel."
+            selections=()
+            continue
+        fi
+
+        break
+    done
     
     local steps=()
     
