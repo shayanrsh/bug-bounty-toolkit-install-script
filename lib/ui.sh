@@ -153,7 +153,18 @@ ui_progress_board_init() {
         return 1
     fi
 
-    local -n _steps_ref="$steps_array_name"
+    # Temporarily disable errexit for nameref creation
+    local old_opts=$-
+    set +e
+    local -n _steps_ref="$steps_array_name" 2>/dev/null
+    local nameref_status=$?
+    [[ "$old_opts" =~ e ]] && set -e
+    
+    if [[ $nameref_status -ne 0 ]]; then
+        ui_progress_board_reset_state
+        return 1
+    fi
+    
     if [[ ${#_steps_ref[@]} -eq 0 ]]; then
         ui_progress_board_reset_state
         return 1

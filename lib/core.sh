@@ -411,10 +411,17 @@ core_execute_installation_steps() {
         return 1
     fi
     
-    local -n steps_ref=$1 2>/dev/null || {
+    # Temporarily disable errexit for nameref creation
+    local old_opts=$-
+    set +e
+    local -n steps_ref=$1 2>/dev/null
+    local nameref_status=$?
+    [[ "$old_opts" =~ e ]] && set -e
+    
+    if [[ $nameref_status -ne 0 ]]; then
         log_error "core_execute_installation_steps: Failed to create nameref to '$1'"
         return 1
-    }
+    fi
     
     local total_steps=${#steps_ref[@]}
     log_info "Executing $total_steps installation step(s)..."

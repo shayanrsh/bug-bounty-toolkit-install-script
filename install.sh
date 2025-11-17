@@ -374,15 +374,11 @@ main() {
         *) log_error "Invalid installation mode"; exit 1 ;;
     esac
     
-    if [[ $? -eq 0 ]]; then
-        ui_show_completion
-        config_save
-        util_generate_manifest
-        log_success "Installation completed successfully!"
-    else
-        log_error "Installation failed"
-        exit 1
-    fi
+    # Installation succeeded if we reached here (due to set -e)
+    ui_show_completion
+    config_save
+    util_generate_manifest
+    log_success "Installation completed successfully!"
 }
 
 # ==============================================================================
