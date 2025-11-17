@@ -14,6 +14,7 @@
 
 # Strict error handling
 set -euo pipefail
+IFS=$'\n\t'
 
 # Check Bash version (require 4.0+)
 if ((BASH_VERSINFO[0] < 4)); then
@@ -21,9 +22,6 @@ if ((BASH_VERSINFO[0] < 4)); then
     echo "Please upgrade bash: sudo apt-get install bash"
     exit 1
 fi
-
-set -uo pipefail
-IFS=$'\n\t'
 
 # ==============================================================================
 # Source Library Modules

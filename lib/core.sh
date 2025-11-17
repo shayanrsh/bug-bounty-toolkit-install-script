@@ -207,6 +207,7 @@ core_install_full() {
     )
     
     core_execute_installation_steps steps
+    return $?
 }
 
 core_install_zsh_only() {
@@ -217,7 +218,11 @@ core_install_zsh_only() {
         "tool_create_helper_scripts:Helper Scripts"
     )
     
+    log_debug "core_install_zsh_only: Calling core_execute_installation_steps with ${#steps[@]} steps"
     core_execute_installation_steps steps
+    local exit_code=$?
+    log_debug "core_install_zsh_only: core_execute_installation_steps returned $exit_code"
+    return $exit_code
 }
 
 core_install_tools_only() {
@@ -235,6 +240,7 @@ core_install_tools_only() {
     )
     
     core_execute_installation_steps steps
+    return $?
 }
 
 core_install_go_tools_only() {
@@ -246,6 +252,7 @@ core_install_go_tools_only() {
     )
     
     core_execute_installation_steps steps
+    return $?
 }
 
 core_install_python_tools_only() {
@@ -256,6 +263,7 @@ core_install_python_tools_only() {
     )
     
     core_execute_installation_steps steps
+    return $?
 }
 
 core_install_wordlists_only() {
@@ -266,6 +274,7 @@ core_install_wordlists_only() {
     )
     
     core_execute_installation_steps steps
+    return $?
 }
 
 core_install_profile() {
@@ -306,6 +315,7 @@ core_install_profile() {
     steps+=("tool_create_helper_scripts:Helper Scripts")
     
     core_execute_installation_steps steps
+    return $?
 }
 
 core_install_custom() {
@@ -347,6 +357,7 @@ core_install_custom() {
     steps+=("tool_create_helper_scripts:Helper Scripts")
     
     core_execute_installation_steps steps
+    return $?
 }
 
 # ==============================================================================
@@ -354,9 +365,24 @@ core_install_custom() {
 # ==============================================================================
 
 core_execute_installation_steps() {
-    local -n steps_ref=$1
+    if [[ -z "$1" ]]; then
+        log_error "core_execute_installation_steps: No parameter provided"
+        return 1
+    fi
+    
+    local -n steps_ref=$1 2>/dev/null || {
+        log_error "core_execute_installation_steps: Failed to create nameref to '$1'"
+        return 1
+    }
     
     local total_steps=${#steps_ref[@]}
+    log_info "Executing $total_steps installation step(s)..."
+    
+    if [[ $total_steps -eq 0 ]]; then
+        log_warning "core_execute_installation_steps: No steps to execute"
+        return 0
+    fi
+    
     local current_step=0
     local start_time=$(date +%s)
     
