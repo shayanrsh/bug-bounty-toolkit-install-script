@@ -290,10 +290,11 @@ tool_install_go() {
     
     local temp_file=$(util_create_temp_file "go-${go_version}.tar.gz")
     local checksum_url="https://go.dev/dl/go${go_version}.linux-amd64.tar.gz.sha256"
+    local checksum_fallback_url="https://dl.google.com/go/go${go_version}.linux-amd64.tar.gz.sha256"
     
     # Download Go with checksum verification
     log_info "Downloading and verifying Go ${go_version}..."
-    if ! util_download_verify "$go_url" "$temp_file" "$checksum_url" "Go ${go_version}"; then
+    if ! util_download_verify "$go_url" "$temp_file" "$checksum_url" "Go ${go_version}" "$checksum_fallback_url"; then
         log_error "Failed to download or verify Go"
         rm -f "$temp_file"
         return 1

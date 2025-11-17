@@ -647,6 +647,7 @@ util_download_verify() {
     local output="$2"
     local checksum_url="${3:-}"
     local description="${4:-Download}"
+    local checksum_fallback_url="${5:-}"
     
     if ! util_download "$url" "$output" "$description"; then
         return 1
@@ -655,29 +656,55 @@ util_download_verify() {
     # Verify checksum if provided
     if [[ -n "$checksum_url" ]] && util_command_exists sha256sum; then
         local checksum_file="${output}.sha256"
-        if util_download "$checksum_url" "$checksum_file" "Checksum"; then
-            log_info "Verifying checksum..."
-            local expected_sum
-            expected_sum=$(awk 'NF>=1 {print $1; exit}' "$checksum_file")
+        local checksum_verified=false
+        local checksum_sources=()
 
-            if [[ -z "$expected_sum" ]]; then
-                log_error "Checksum file from $checksum_url is empty or malformed"
-                rm -f "$output" "$checksum_file"
-                return 1
+        checksum_sources+=("$checksum_url")
+        if [[ -n "$checksum_fallback_url" ]]; then
+            checksum_sources+=("$checksum_fallback_url")
+        fi
+
+        for checksum_source in "${checksum_sources[@]}"; do
+            [[ -z "$checksum_source" ]] && continue
+
+            if ! util_download "$checksum_source" "$checksum_file" "Checksum"; then
+                log_warning "Failed to download checksum from $checksum_source"
+                continue
             fi
 
+            local expected_sum
+            expected_sum=$(awk 'NF>=1 {print $1; exit}' "$checksum_file" | tr -d '\r')
+
+            if [[ -z "$expected_sum" ]]; then
+                log_warning "Checksum file from $checksum_source is empty or malformed"
+                continue
+            fi
+
+            if [[ ! "$expected_sum" =~ ^[0-9a-fA-F]{64}$ ]]; then
+                local preview=${expected_sum:0:32}
+                log_warning "Checksum response from $checksum_source is not a SHA256 hash (starts with: $preview)"
+                continue
+            fi
+
+            log_info "Verifying checksum..."
             local actual_sum
             actual_sum=$(sha256sum "$output" | awk '{print $1}')
 
             if [[ "$expected_sum" == "$actual_sum" ]]; then
                 log_success "Checksum verification passed"
-                rm -f "$checksum_file"
-                return 0
+                checksum_verified=true
+                break
             else
                 log_error "Checksum verification failed (expected $expected_sum, got $actual_sum)"
-                rm -f "$output" "$checksum_file"
-                return 1
+                break
             fi
+        done
+
+        rm -f "$checksum_file"
+
+        if [[ "$checksum_verified" != "true" ]]; then
+            rm -f "$output"
+            return 1
         fi
     fi
     
