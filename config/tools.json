@@ -1,0 +1,368 @@
+{
+  "$schema": "./config.schema.json",
+  "version": "3.0.0",
+  "metadata": {
+    "name": "Bug Bounty Toolkit",
+    "description": "Professional security tools installation configuration",
+    "author": "Security Team",
+    "updated": "2024-11-12"
+  },
+  "settings": {
+    "install_prefix": "/usr/local",
+    "tools_directory": "~/tools",
+    "wordlists_directory": "~/wordlists",
+    "scripts_directory": "~/tools/scripts",
+    "log_level": "INFO",
+    "parallel_jobs": 4,
+    "go_tools_parallel": true,
+    "skip_confirmations": false,
+    "backup_existing": true,
+    "verify_after_install": true,
+    "auto_update_templates": true
+  },
+  "categories": {
+    "shell": {
+      "enabled": true,
+      "tools": {
+        "zsh": {
+          "enabled": true,
+          "description": "Z Shell with Oh My ZSH",
+          "apt_packages": ["zsh", "git", "curl", "wget", "fonts-font-awesome"],
+          "post_install": ["oh-my-zsh", "powerlevel10k"]
+        }
+      }
+    },
+    "languages": {
+      "enabled": true,
+      "tools": {
+        "go": {
+          "enabled": true,
+          "description": "Go Programming Language",
+          "version": "latest",
+          "install_method": "binary",
+          "binary_url_template": "https://go.dev/dl/go{VERSION}.linux-amd64.tar.gz",
+          "install_path": "/usr/local/go"
+        },
+        "rust": {
+          "enabled": true,
+          "description": "Rust Programming Language",
+          "install_method": "rustup",
+          "install_script": "https://sh.rustup.rs"
+        },
+        "python3": {
+          "enabled": true,
+          "description": "Python 3",
+          "install_method": "apt",
+          "apt_packages": ["python3", "python3-pip", "python3-venv"]
+        }
+      }
+    },
+    "go_tools": {
+      "enabled": true,
+      "parallel": true,
+      "tools": {
+        "nuclei": {
+          "enabled": true,
+          "package": "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+          "description": "Vulnerability scanner based on templates",
+          "category": "vulnerability_scanner",
+          "post_install": ["nuclei -update-templates -silent"]
+        },
+        "subfinder": {
+          "enabled": true,
+          "package": "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest",
+          "description": "Subdomain discovery tool",
+          "category": "reconnaissance"
+        },
+        "httpx": {
+          "enabled": true,
+          "package": "github.com/projectdiscovery/httpx/cmd/httpx@latest",
+          "description": "Fast HTTP probe with rich features",
+          "category": "reconnaissance"
+        },
+        "dnsx": {
+          "enabled": true,
+          "package": "github.com/projectdiscovery/dnsx/cmd/dnsx@latest",
+          "description": "DNS toolkit and resolver",
+          "category": "reconnaissance"
+        },
+        "katana": {
+          "enabled": true,
+          "package": "github.com/projectdiscovery/katana/cmd/katana@latest",
+          "description": "Web crawling framework",
+          "category": "reconnaissance"
+        },
+        "naabu": {
+          "enabled": true,
+          "package": "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest",
+          "description": "Fast port scanner",
+          "category": "reconnaissance",
+          "dependencies": ["libpcap-dev"]
+        },
+        "ffuf": {
+          "enabled": true,
+          "package": "github.com/ffuf/ffuf/v2@latest",
+          "description": "Fast web fuzzer written in Go",
+          "category": "fuzzing"
+        },
+        "gobuster": {
+          "enabled": true,
+          "package": "github.com/OJ/gobuster/v3@latest",
+          "description": "Directory/file and DNS busting tool",
+          "category": "fuzzing"
+        },
+        "gau": {
+          "enabled": true,
+          "package": "github.com/lc/gau/v2/cmd/gau@latest",
+          "description": "Get All URLs from various sources",
+          "category": "reconnaissance"
+        },
+        "waybackurls": {
+          "enabled": true,
+          "package": "github.com/tomnomnom/waybackurls@latest",
+          "description": "Fetch URLs from Wayback Machine",
+          "category": "reconnaissance"
+        },
+        "unfurl": {
+          "enabled": true,
+          "package": "github.com/tomnomnom/unfurl@latest",
+          "description": "URL parsing and analysis tool",
+          "category": "utilities"
+        },
+        "cookiemonster": {
+          "enabled": true,
+          "package": "github.com/iangcarroll/cookiemonster/cmd/cookiemonster@latest",
+          "description": "Cookie analysis and manipulation",
+          "category": "exploitation"
+        }
+      }
+    },
+    "python_tools": {
+      "enabled": true,
+      "use_virtual_env": true,
+      "tools": {
+        "sqlmap": {
+          "enabled": true,
+          "repository": "https://github.com/sqlmapproject/sqlmap.git",
+          "description": "SQL injection tool",
+          "category": "exploitation"
+        },
+        "ghauri": {
+          "enabled": true,
+          "repository": "https://github.com/r0oth3x49/ghauri.git",
+          "description": "Advanced SQL injection tool",
+          "requirements": "requirements.txt",
+          "category": "exploitation"
+        },
+        "xsstrike": {
+          "enabled": true,
+          "repository": "https://github.com/s0md3v/XSStrike.git",
+          "description": "XSS detection suite",
+          "requirements": "requirements.txt",
+          "category": "exploitation"
+        },
+        "sstimap": {
+          "enabled": true,
+          "repository": "https://github.com/vladko312/SSTImap.git",
+          "description": "SSTI detection and exploitation",
+          "requirements": "requirements.txt",
+          "category": "exploitation"
+        },
+        "commix": {
+          "enabled": true,
+          "repository": "https://github.com/commixproject/commix.git",
+          "description": "Command injection exploitation tool",
+          "category": "exploitation"
+        },
+        "recollapse": {
+          "enabled": true,
+          "repository": "https://github.com/0xacb/recollapse.git",
+          "description": "Regex-based attack pattern generator",
+          "requirements": "requirements.txt",
+          "install_script": "install.sh",
+          "category": "utilities"
+        }
+      }
+    },
+    "rust_tools": {
+      "enabled": true,
+      "tools": {
+        "x8": {
+          "enabled": true,
+          "crate": "x8",
+          "description": "Hidden parameter discovery tool",
+          "category": "reconnaissance"
+        }
+      }
+    },
+    "apt_tools": {
+      "enabled": true,
+      "packages": {
+        "build-essential": {
+          "enabled": true,
+          "description": "Development tools and libraries"
+        },
+        "pkg-config": {
+          "enabled": true,
+          "description": "Package configuration helper"
+        },
+        "libssl-dev": {
+          "enabled": true,
+          "description": "SSL development libraries"
+        },
+        "jq": {
+          "enabled": true,
+          "description": "JSON processor"
+        },
+        "tree": {
+          "enabled": true,
+          "description": "Directory tree viewer"
+        },
+        "htop": {
+          "enabled": true,
+          "description": "Interactive process viewer"
+        },
+        "neofetch": {
+          "enabled": true,
+          "description": "System information tool"
+        },
+        "crunch": {
+          "enabled": true,
+          "description": "Wordlist generator"
+        },
+        "unzip": {
+          "enabled": true,
+          "description": "Archive extraction tool"
+        }
+      }
+    },
+    "snap_tools": {
+      "enabled": true,
+      "skip_on_wsl": true,
+      "packages": {
+        "dalfox": {
+          "enabled": true,
+          "description": "XSS parameter analysis tool"
+        }
+      }
+    },
+    "pipx_tools": {
+      "enabled": true,
+      "packages": {
+        "uro": {
+          "enabled": true,
+          "description": "URL filtering and deduplication"
+        },
+        "arjun": {
+          "enabled": true,
+          "description": "HTTP parameter discovery"
+        }
+      }
+    },
+    "wordlists": {
+      "enabled": true,
+      "tools": {
+        "seclists": {
+          "enabled": true,
+          "type": "zip",
+          "url": "https://github.com/danielmiessler/SecLists/archive/master.zip",
+          "extract_dir": "SecLists-master",
+          "target_name": "SecLists",
+          "description": "Collection of security lists"
+        },
+        "bo0om": {
+          "enabled": true,
+          "type": "git",
+          "repository": "https://github.com/Bo0oM/fuzz.txt.git",
+          "target_name": "Bo0oM",
+          "description": "Bo0oM fuzzing wordlists"
+        },
+        "shayanrsh": {
+          "enabled": true,
+          "type": "git",
+          "repository": "https://github.com/shayanrsh/wordlist.git",
+          "target_name": "wordlist",
+          "description": "Custom wordlists"
+        },
+        "jwt-secrets": {
+          "enabled": true,
+          "type": "git",
+          "repository": "https://github.com/wallarm/jwt-secrets.git",
+          "target_name": "jwt-secrets",
+          "description": "JWT secret wordlist"
+        },
+        "yassineaboukir": {
+          "enabled": true,
+          "type": "file",
+          "url": "https://gist.githubusercontent.com/yassineaboukir/8e12adefbd505ef704674ad6ad48743d/raw/all.txt",
+          "target_path": "yassineaboukir-gist/all.txt",
+          "description": "Yassine Aboukir's wordlist"
+        }
+      }
+    }
+  },
+  "profiles": {
+    "minimal": {
+      "description": "Minimal installation - just the essentials",
+      "enabled_categories": ["shell", "languages"],
+      "enabled_tools": ["nuclei", "subfinder", "httpx"]
+    },
+    "full": {
+      "description": "Full installation - everything",
+      "enabled_categories": ["all"],
+      "enabled_tools": ["all"]
+    },
+    "pentest": {
+      "description": "Penetration testing focus",
+      "enabled_categories": [
+        "shell",
+        "languages",
+        "go_tools",
+        "python_tools",
+        "wordlists"
+      ],
+      "enabled_tools": ["all"]
+    },
+    "developer": {
+      "description": "Development environment focus",
+      "enabled_categories": ["shell", "languages", "apt_tools"],
+      "enabled_tools": ["go", "rust", "python3", "build-essential"]
+    },
+    "recon": {
+      "description": "Reconnaissance tools only",
+      "enabled_categories": ["languages"],
+      "enabled_tools": [
+        "go",
+        "nuclei",
+        "subfinder",
+        "httpx",
+        "katana",
+        "naabu",
+        "gau",
+        "waybackurls"
+      ]
+    },
+    "exploitation": {
+      "description": "Exploitation tools focus",
+      "enabled_categories": ["languages", "python_tools"],
+      "enabled_tools": [
+        "python3",
+        "sqlmap",
+        "ghauri",
+        "xsstrike",
+        "sstimap",
+        "commix"
+      ]
+    }
+  },
+  "hooks": {
+    "pre_install": [],
+    "post_install": [
+      "echo 'Installation complete!'",
+      "source ~/.zshrc 2>/dev/null || source ~/.bashrc 2>/dev/null"
+    ],
+    "pre_tool_install": [],
+    "post_tool_install": [],
+    "on_error": []
+  }
+}

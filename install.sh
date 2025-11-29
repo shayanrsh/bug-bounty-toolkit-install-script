@@ -83,11 +83,24 @@ if [[ ! -d "$LIB_DIR" ]]; then
 fi
 
 # Source all library modules
-source "${LIB_DIR}/config.sh"  || { echo "Failed to load config module"; exit 1; }
-source "${LIB_DIR}/ui.sh"      || { echo "Failed to load UI module"; exit 1; }
-source "${LIB_DIR}/utils.sh"   || { echo "Failed to load utils module"; exit 1; }
-source "${LIB_DIR}/tools.sh"   || { echo "Failed to load tools module"; exit 1; }
-source "${LIB_DIR}/core.sh"    || { echo "Failed to load core module"; exit 1; }
+source "${LIB_DIR}/config.sh"      || { echo "Failed to load config module"; exit 1; }
+source "${LIB_DIR}/ui.sh"          || { echo "Failed to load UI module"; exit 1; }
+source "${LIB_DIR}/utils.sh"       || { echo "Failed to load utils module"; exit 1; }
+source "${LIB_DIR}/tools.sh"       || { echo "Failed to load tools module"; exit 1; }
+source "${LIB_DIR}/core.sh"        || { echo "Failed to load core module"; exit 1; }
+source "${LIB_DIR}/plugins.sh"     || { echo "Failed to load plugins module"; exit 1; }
+source "${LIB_DIR}/dependencies.sh" || { echo "Failed to load dependencies module"; exit 1; }
+source "${LIB_DIR}/state.sh"       || { echo "Failed to load state module"; exit 1; }
+
+# Load JSON configuration if available
+if [[ -f "${LIB_DIR}/json_config.sh" ]]; then
+    source "${LIB_DIR}/json_config.sh" || log_warning "JSON config module not available"
+fi
+
+# Load verification module if available
+if [[ -f "${LIB_DIR}/verify.sh" ]]; then
+    source "${LIB_DIR}/verify.sh" || log_warning "Verification module not available"
+fi
 
 # ==============================================================================
 # Error Handling
@@ -169,23 +182,21 @@ OPTIONS:
     --profile=PROFILE      Use profile (minimal/full/pentest/developer)
     --update               Update existing tools
     --uninstall            Uninstall all tools
+    --verify               Verify installed tools are working
     --resume[=STEP]        Resume a previous run (optional step id)
     --allow-root           Allow running as root (not recommended)
 
 ENVIRONMENT VARIABLES:
     GO_TOOLS_PARALLEL=true   Enable parallel Go tools installation (faster)
+    LOG_LEVEL=DEBUG          Enable verbose logging
 
 EXAMPLES:
     ./install.sh                       # Interactive menu
     ./install.sh --full                # Full installation
     ./install.sh --yes --full          # Non-interactive full install
     ./install.sh --dry-run --full      # Preview installation
+    ./install.sh --verify              # Verify installed tools
     GO_TOOLS_PARALLEL=true ./install.sh --go-tools  # Fast parallel install
-
-EXAMPLES:
-    ./install.sh                    # Interactive menu
-    ./install.sh --full             # Full installation
-    ./install.sh --dry-run --full   # Preview installation
 
 GitHub: https://github.com/shayanrsh/bug-bounty-toolkit-install-script
 
@@ -225,6 +236,7 @@ parse_arguments() {
             --profile=*) PROFILE="${1#*=}"; INSTALL_MODE="profile"; shift ;;
             --update) INSTALL_MODE="update"; shift ;;
             --uninstall) INSTALL_MODE="uninstall"; shift ;;
+            --verify) INSTALL_MODE="verify"; shift ;;
             --resume) RESUME_MODE="true"; shift ;;
             --resume=*) RESUME_MODE="true"; RESUME_TARGET="${1#*=}"; shift ;;
             --allow-root) ALLOW_ROOT="true"; shift ;;
@@ -375,6 +387,7 @@ main() {
         custom) core_install_custom ;;
         update) core_update_tools ;;
         uninstall) core_uninstall_all ;;
+        verify) core_verify_installation ;;
         *) log_error "Invalid installation mode"; exit 1 ;;
     esac
     

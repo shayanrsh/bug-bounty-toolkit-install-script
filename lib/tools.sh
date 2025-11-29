@@ -371,8 +371,7 @@ tool_install_go() {
     fi
 }
 
-tool_install_pipx_tools() {
-    local tool_id="${FUNCNAME[0]}"
+tool_uninstall_go() {
     log_warning "Uninstalling Go..."
     [[ "$DRY_RUN" == "false" ]] && sudo rm -rf /usr/local/go
 }
@@ -383,32 +382,28 @@ tool_install_pipx_tools() {
 
 tool_install_rust() {
     local tool_id="${FUNCNAME[0]}"
-            ui_tool_progress_phase "$tool_id" 30 "pipx installed"
     ui_section_header "Installing Rust Programming Language" "$CYAN"
+    ui_tool_progress_phase "$tool_id" 10 "Checking existing installation"
     
-            ui_tool_progress_phase "$tool_id" 30 "[DRY RUN] pipx install"
     if util_command_exists rustc; then
         local version=$(util_get_tool_version rustc)
         log_success "Rust $version is already installed"
         
-    ui_tool_progress_phase "$tool_id" 40 "Installing pipx tools"
         if [[ "$INTERACTIVE" == "true" ]]; then
             if ui_confirm "Update Rust to latest version?" "n"; then
                 [[ "$DRY_RUN" == "false" ]] && rustup update
                 ui_tool_progress_phase "$tool_id" 60 "Updating existing Rust toolchain"
             fi
         fi
-                ui_tool_progress_phase "$tool_id" 60 "Installed $tool"
         return 0
     fi
     
     log_info "Installing Rust..."
     ui_tool_progress_phase "$tool_id" 20 "Downloading rustup"
-            ui_tool_progress_phase "$tool_id" 60 "[DRY RUN] $tool"
     
     if [[ "$DRY_RUN" == "true" ]]; then
         log_info "[DRY RUN] Would install Rust"
-    ui_tool_progress_phase "$tool_id" 85 "pipx tools processed"
+        ui_tool_progress_phase "$tool_id" 85 "Simulated installation"
         return 0
     fi
     

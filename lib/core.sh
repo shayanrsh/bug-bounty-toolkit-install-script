@@ -729,6 +729,12 @@ core_post_install() {
     # Initialize manifest
     util_manifest_init
     
+    # Run verification if module is available
+    if declare -f verify_post_install &>/dev/null; then
+        log_info "Running post-installation verification..."
+        verify_post_install || log_warning "Some verifications failed"
+    fi
+    
     # Show success banner
     ui_show_success_banner
     
@@ -736,4 +742,17 @@ core_post_install() {
     ui_show_next_steps
     
     log_success "Installation completed successfully!"
+}
+
+# Run verification of all installed tools
+core_verify_installation() {
+    ui_section_header "Verifying Installation" "$CYAN"
+    
+    if ! declare -f verify_all &>/dev/null; then
+        log_warning "Verification module not loaded"
+        return 1
+    fi
+    
+    verify_all
+    return $?
 }
