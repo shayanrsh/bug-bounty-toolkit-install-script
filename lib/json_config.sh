@@ -276,6 +276,79 @@ json_config_get_apt_packages() {
     return 0
 }
 
+# Get enabled Rust tools from config
+json_config_get_rust_tools() {
+    local -n tools_ref=$1
+    
+    if [[ "$JSON_CONFIG_LOADED" != "true" ]]; then
+        return 1
+    fi
+    
+    local config_file="${JSON_CONFIG_CACHE["_file"]}"
+    
+    while IFS='|' read -r name crate desc; do
+        if [[ -n "$name" ]]; then
+            tools_ref["$name"]="cargo|${crate}|${desc}"
+        fi
+    done < <(jq -r '
+        .categories.rust_tools.tools // {} |
+        to_entries[] |
+        select(.value.enabled == true) |
+        "\(.key)|\(.value.crate)|\(.value.description // "")"
+    ' "$config_file" 2>/dev/null)
+    
+    return 0
+}
+
+# Get enabled Snap tools from config
+json_config_get_snap_tools() {
+    local -n tools_ref=$1
+    
+    if [[ "$JSON_CONFIG_LOADED" != "true" ]]; then
+        return 1
+    fi
+    
+    local config_file="${JSON_CONFIG_CACHE["_file"]}"
+    
+    while IFS='|' read -r name desc; do
+        if [[ -n "$name" ]]; then
+            tools_ref["$name"]="${name}|${desc}"
+        fi
+    done < <(jq -r '
+        .categories.snap_tools.packages // {} |
+        to_entries[] |
+        select(.value.enabled == true) |
+        "\(.key)|\(.value.description // "")"
+    ' "$config_file" 2>/dev/null)
+    
+    return 0
+}
+
+# Get enabled Pipx tools from config
+json_config_get_pipx_tools() {
+    local -n tools_ref=$1
+    
+    if [[ "$JSON_CONFIG_LOADED" != "true" ]]; then
+        return 1
+    fi
+    
+    local config_file="${JSON_CONFIG_CACHE["_file"]}"
+    
+    while IFS='|' read -r name desc; do
+        if [[ -n "$name" ]]; then
+            tools_ref["$name"]="${name}|${desc}"
+        fi
+    done < <(jq -r '
+        .categories.pipx_tools.packages // {} |
+        to_entries[] |
+        select(.value.enabled == true) |
+        "\(.key)|\(.value.description // "")"
+    ' "$config_file" 2>/dev/null)
+    
+    return 0
+}
+
+
 # ==============================================================================
 # Profile Handling
 # ==============================================================================

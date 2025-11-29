@@ -402,10 +402,10 @@ util_check_internet() {
 }
 
 util_check_ubuntu_version() {
-    if ! lsb_release -d 2>/dev/null | grep -qi "ubuntu"; then
-        log_warning "This script is designed for Ubuntu systems"
+    if ! lsb_release -d 2>/dev/null | grep -Eiq "ubuntu|debian|kali|pop"; then
+        log_warning "This script is designed for Debian-based systems (Ubuntu, Kali, etc.)"
         if [[ "$FORCE_INSTALL" == "false" ]] && [[ "$INTERACTIVE" == "true" ]]; then
-            ui_confirm "Continue anyway?" "n" || return 1
+            ui_confirm "Your distribution may not be fully supported. Continue anyway?" "n" || return 1
         fi
     fi
     return 0

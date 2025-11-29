@@ -250,60 +250,43 @@ parse_arguments() {
 # ==============================================================================
 
 interactive_menu() {
-    ui_show_banner
+    local menu_options=(
+        "1" "Full Installation"
+        "2" "ZSH Environment Only"
+        "3" "Security Tools Only"
+        "4" "Go Tools Only"
+        "5" "Python Tools Only"
+        "6" "Wordlists Only"
+        "7" "Minimal Profile"
+        "8" "Pentest Profile"
+        "9" "Developer Profile"
+        "10" "Custom Installation"
+        "11" "Update Existing Tools"
+        "u" "Uninstall All"
+        "q" "Quit"
+    )
     
-    echo ""
-    echo "Bug Bounty Toolkit Installer Menu"
-    echo "=================================="
-    echo ""
-    echo "  1) Full Installation"
-    echo "  2) ZSH Environment Only"
-    echo "  3) Security Tools Only"
-    echo "  4) Go Tools Only"
-    echo "  5) Python Tools Only"
-    echo "  6) Wordlists Only"
-    echo "  7) Minimal Profile"
-    echo "  8) Pentest Profile"
-    echo "  9) Developer Profile"
-    echo " 10) Custom Installation"
-    echo " 11) Update Existing Tools"
-    echo ""
-    echo "  u) Uninstall All"
-    echo "  q) Quit"
-    echo ""
+    local choice
+    if ! ui_widget_menu "Bug Bounty Toolkit Installer" "Select an installation option:" menu_options choice; then
+        exit 0
+    fi
 
-    echo -e "${GRAY}How to choose:${NC}"
-    echo -e "${GRAY}- Type the number or shortcut shown above, then press Enter.${NC}"
-    echo -e "${GRAY}- Example: enter '1' for a full install, '10' for custom, 'u' to uninstall.${NC}"
-    echo -e "${GRAY}- Enter 'q' at any time to exit without making changes.${NC}"
-    echo
-
-    local choice=""
-    while true; do
-        read -r -p "$(echo -e "${YELLOW}Select an option [1-11, u, q]: ${NC}")" choice
-        choice="${choice//[[:space:]]/}"
-        if [[ -z "$choice" ]]; then
-            echo -e "${RED}Please enter a value from the menu.${NC}"
-            continue
-        fi
-
-        case "${choice,,}" in
-            1) INSTALL_MODE="full"; break ;;
-            2) INSTALL_MODE="zsh"; break ;;
-            3) INSTALL_MODE="tools"; break ;;
-            4) INSTALL_MODE="go_tools"; break ;;
-            5) INSTALL_MODE="python_tools"; break ;;
-            6) INSTALL_MODE="wordlists"; break ;;
-            7) INSTALL_MODE="profile"; PROFILE="minimal"; break ;;
-            8) INSTALL_MODE="profile"; PROFILE="pentest"; break ;;
-            9) INSTALL_MODE="profile"; PROFILE="developer"; break ;;
-            10) INSTALL_MODE="custom"; break ;;
-            11) INSTALL_MODE="update"; break ;;
-            u) INSTALL_MODE="uninstall"; break ;;
-            q) exit 0 ;;
-            *) echo -e "${RED}Invalid selection '${choice}'. Choose from 1-11, u, or q.${NC}" ;;
-        esac
-    done
+    case "${choice,,}" in
+        1) INSTALL_MODE="full" ;;
+        2) INSTALL_MODE="zsh" ;;
+        3) INSTALL_MODE="tools" ;;
+        4) INSTALL_MODE="go_tools" ;;
+        5) INSTALL_MODE="python_tools" ;;
+        6) INSTALL_MODE="wordlists" ;;
+        7) INSTALL_MODE="profile"; PROFILE="minimal" ;;
+        8) INSTALL_MODE="profile"; PROFILE="pentest" ;;
+        9) INSTALL_MODE="profile"; PROFILE="developer" ;;
+        10) INSTALL_MODE="custom" ;;
+        11) INSTALL_MODE="update" ;;
+        u) INSTALL_MODE="uninstall" ;;
+        q) exit 0 ;;
+        *) echo -e "${RED}Invalid selection '${choice}'.${NC}"; exit 1 ;;
+    esac
 }
 
 # ==============================================================================
@@ -314,6 +297,30 @@ main() {
     # Initialize logging
     ui_log_init
     config_init_dirs
+    
+    # Initialize JSON configuration and populate tool arrays
+    if json_config_init; then
+        log_info "Populating tool definitions from JSON config..."
+        
+        # Clear default arrays to ensure we use only what's in the config
+        GO_TOOLS=()
+        PYTHON_TOOLS=()
+        RUST_TOOLS=()
+        APT_TOOLS=()
+        SNAP_TOOLS=()
+        PIPX_TOOLS=()
+        WORDLISTS=()
+        
+        json_config_get_go_tools GO_TOOLS
+        json_config_get_python_tools PYTHON_TOOLS
+        json_config_get_rust_tools RUST_TOOLS
+        json_config_get_apt_packages APT_TOOLS
+        json_config_get_snap_tools SNAP_TOOLS
+        json_config_get_pipx_tools PIPX_TOOLS
+        json_config_get_wordlists WORDLISTS
+        
+        log_success "Tool definitions loaded from JSON"
+    fi
     
     # Load user configuration file if it exists
     config_load_user_config 2>/dev/null || true

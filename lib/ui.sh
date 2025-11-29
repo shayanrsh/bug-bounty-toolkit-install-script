@@ -881,6 +881,83 @@ EOF
 }
 
 # ==============================================================================
+# Widget-based UI (Whiptail/Dialog)
+# ==============================================================================
+
+UI_HAS_WHIPTAIL=false
+if command -v whiptail >/dev/null; then
+    UI_HAS_WHIPTAIL=true
+fi
+
+ui_widget_msgbox() {
+    local title="$1"
+    local message="$2"
+    
+    if [[ "$UI_HAS_WHIPTAIL" == "true" ]] && [[ "$INTERACTIVE" == "true" ]]; then
+        whiptail --title "$title" --msgbox "$message" 15 78
+    else
+        ui_section_header "$title"
+        echo "$message"
+        echo
+        read -n 1 -s -r -p "Press any key to continue..."
+        echo
+    fi
+}
+
+ui_widget_yesno() {
+    local title="$1"
+    local message="$2"
+    
+    if [[ "$UI_HAS_WHIPTAIL" == "true" ]] && [[ "$INTERACTIVE" == "true" ]]; then
+        if whiptail --title "$title" --yesno "$message" 15 78; then
+            return 0
+        else
+            return 1
+        fi
+    else
+        ui_confirm "$message" "n"
+    fi
+}
+
+ui_widget_menu() {
+    local title="$1"
+    local text="$2"
+    local -n options_ref=$3
+    local -n result_ref=$4
+    
+    if [[ "$UI_HAS_WHIPTAIL" == "true" ]] && [[ "$INTERACTIVE" == "true" ]]; then
+        local choice
+        choice=$(whiptail --title "$title" --menu "$text" 20 78 10 "${options_ref[@]}" 3>&1 1>&2 2>&3)
+        local exit_code=$?
+        
+        if [[ $exit_code -eq 0 ]]; then
+            result_ref="$choice"
+            return 0
+        else
+            return 1
+        fi
+    else
+        # Fallback to text menu
+        ui_section_header "$title"
+        echo "$text"
+        echo
+        
+        local i=0
+        while [[ $i -lt ${#options_ref[@]} ]]; do
+            local key="${options_ref[$i]}"
+            local val="${options_ref[$((i+1))]}"
+            printf "  %2s) %s\n" "$key" "$val"
+            ((i+=2))
+        done
+        
+        echo
+        read -r -p "Select an option: " choice
+        result_ref="$choice"
+        return 0
+    fi
+}
+
+# ==============================================================================
 # Interactive Menu System
 # ==============================================================================
 
