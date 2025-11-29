@@ -1,10 +1,12 @@
-# Bug Bounty Toolkit Installer v3.0.0
+# Bug Bounty Toolkit Installer v4.0.0
 
 **Professional, modular security tools installation framework for Ubuntu/WSL2**
 
-[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://github.com/shayanrsh/bug-bounty-toolkit-install-script)
+[![Version](https://img.shields.io/badge/version-4.0.0-blue.svg)](https://github.com/shayanrsh/bug-bounty-toolkit-install-script)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![ShellCheck](https://img.shields.io/badge/shellcheck-passing-success.svg)](https://www.shellcheck.net/)
+[![Bash 4+](https://img.shields.io/badge/bash-4.0+-1f425f.svg)](https://www.gnu.org/software/bash/)
+[![Platform](https://img.shields.io/badge/platform-Ubuntu%20%7C%20WSL2-orange.svg)](https://ubuntu.com/)
 
 ---
 
@@ -524,11 +526,13 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## 🗺️ Roadmap
 
-- [ ] Tool version pinning
-- [ ] Configuration file support (YAML/JSON)
+- [x] Tool version pinning
+- [x] Configuration file support (JSON)
+- [x] Health check commands
+- [x] Progress board with rewriting capability
+- [x] State management and resume support
 - [ ] Docker container support
 - [ ] Auto-update mechanism
-- [ ] Health check commands
 - [ ] Tool usage examples
 - [ ] Integration with package managers
 - [ ] Multi-distro support (Debian, Arch, etc.)

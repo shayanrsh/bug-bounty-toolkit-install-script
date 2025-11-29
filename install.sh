@@ -4,7 +4,7 @@
 # Security Tools Installer - Main Entry Point
 # ==============================================================================
 # Description: Professional, modular security tools installation framework
-# Version: 3.0.0
+# Version: 4.0.0
 # Author: Bug Bounty Community
 # License: MIT
 #
@@ -161,7 +161,7 @@ ALLOW_ROOT="false"
 
 show_help() {
     cat << 'EOF'
-Security Tools Installer v3.0.0
+Security Tools Installer v4.0.0
 
 USAGE:
     ./install.sh [OPTIONS]
@@ -189,6 +189,7 @@ OPTIONS:
 ENVIRONMENT VARIABLES:
     GO_TOOLS_PARALLEL=true   Enable parallel Go tools installation (faster)
     LOG_LEVEL=DEBUG          Enable verbose logging
+    NO_COLOR=1               Disable colored output
 
 EXAMPLES:
     ./install.sh                       # Interactive menu
@@ -204,7 +205,7 @@ EOF
 }
 
 show_version() {
-    echo "Security Tools Installer v${SCRIPT_VERSION}"
+    echo "Security Tools Installer v${SCRIPT_VERSION:-4.0.0}"
     echo "License: MIT"
 }
 

@@ -1,110 +1,105 @@
 #!/bin/bash
 # ==============================================================================
-# Security Tools Installer - UI/UX Module
+# Bug Bounty Toolkit - UI/UX Module
 # ==============================================================================
-# Purpose: All user interface functions including progress bars, menus, and logging
+# Version: 4.0.0
+# Description: Professional terminal UI with progress tracking and logging
+# License: MIT
 # ==============================================================================
+
+# Prevent multiple sourcing
+[[ -n "${_UI_LOADED:-}" ]] && return 0
+readonly _UI_LOADED=1
 
 # shellcheck disable=SC2155
 
 # ==============================================================================
-# Logging Functions
+# Logging System
 # ==============================================================================
 
-# Initialize logging
+# Initialize logging system
 ui_log_init() {
-    mkdir -p "$(dirname "$LOG_FILE")"
+    mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || return 1
+    
     {
-        echo "======================================================================"
-        echo "$SCRIPT_NAME v$SCRIPT_VERSION"
-        echo "======================================================================"
-        echo "Started: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
-        echo "User: $(whoami)"
-        echo "Home: $HOME"
-        echo "OS: $(lsb_release -d 2>/dev/null | cut -f2 || echo 'Unknown')"
-        echo "Kernel: $(uname -r)"
-        echo "Log Level: ${LOG_LEVEL:-INFO}"
-        echo "======================================================================"
+        echo "╔══════════════════════════════════════════════════════════════════════════════╗"
+        echo "║                         ${SCRIPT_NAME} v${SCRIPT_VERSION}                              ║"
+        echo "╚══════════════════════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "Session Details:"
+        echo "  Started:     $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        echo "  User:        $(whoami)"
+        echo "  Home:        $HOME"
+        echo "  Shell:       $SHELL"
+        echo "  OS:          $(lsb_release -d 2>/dev/null | cut -f2 || echo 'Unknown')"
+        echo "  Kernel:      $(uname -r)"
+        echo "  Arch:        $(uname -m)"
+        echo "  Log Level:   ${LOG_LEVEL:-INFO}"
+        echo "  Dry Run:     ${DRY_RUN:-false}"
+        echo "  Interactive: ${INTERACTIVE:-true}"
+        echo ""
+        echo "════════════════════════════════════════════════════════════════════════════════"
+        echo ""
     } > "$LOG_FILE"
 }
 
-# Logging levels: TRACE=0, DEBUG=1, INFO=2, WARNING=3, ERROR=4
-declare -A LOG_LEVELS=([TRACE]=0 [DEBUG]=1 [INFO]=2 [WARNING]=3 [ERROR]=4)
-LOG_LEVEL="${LOG_LEVEL:-INFO}"
+# Log levels with numeric values
+declare -gA LOG_LEVELS=([TRACE]=0 [DEBUG]=1 [INFO]=2 [SUCCESS]=2 [WARNING]=3 [ERROR]=4)
 
-# Check if message should be logged based on level
+# Check if message should be logged
 _should_log() {
     local msg_level="$1"
-    local current_level="${LOG_LEVELS[$LOG_LEVEL]:-2}"
+    local current_level="${LOG_LEVELS[${LOG_LEVEL:-INFO}]:-2}"
     local message_level="${LOG_LEVELS[$msg_level]:-2}"
-    
-    [[ $message_level -ge $current_level ]]
+    (( message_level >= current_level ))
 }
 
-# Generic log message function
+# Core logging function
 _log_message() {
     local level="$1"
     local color="$2"
     local icon="$3"
     local message="$4"
     local timestamp
-    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    timestamp=$(date '+%H:%M:%S')
     
-    # Check if we should log this level
-    if ! _should_log "$level"; then
-        return 0
-    fi
+    _should_log "$level" || return 0
     
-    # Console output (colored)
-    if [[ "$VERBOSE" == "true" ]] || [[ "$level" != "DEBUG" && "$level" != "TRACE" ]]; then
-        echo -e "${color}${icon} [${level}] ${timestamp}${NC} ${message}"
+    # Console output with colors
+    if [[ "$QUIET" != "true" ]]; then
+        if [[ "$level" == "DEBUG" || "$level" == "TRACE" ]]; then
+            [[ "$VERBOSE" == "true" ]] && echo -e "${color}${icon} ${DIM}${timestamp}${NC} ${message}"
+        else
+            echo -e "${color}${icon}${NC} ${message}"
+        fi
     fi
     
     # File output (plain text)
-    echo "[${level}] ${timestamp} ${message}" >> "$LOG_FILE"
+    [[ -n "$LOG_FILE" ]] && echo "[${level}] $(date '+%Y-%m-%d %H:%M:%S') ${message}" >> "$LOG_FILE" 2>/dev/null
 }
 
-log_trace()   { _log_message "TRACE"   "$GRAY"   "→"             "$1"; }
-log_debug()   { _log_message "DEBUG"   "$PURPLE" "$ICON_DEBUG"   "$1"; }
-log_info()    { _log_message "INFO"    "$BLUE"   "$ICON_INFO"    "$1"; }
-log_success() { _log_message "SUCCESS" "$GREEN"  "$ICON_SUCCESS" "$1"; }
-log_warning() { _log_message "WARNING" "$YELLOW" "$ICON_WARNING" "$1"; }
-log_error()   { _log_message "ERROR"   "$RED"    "$ICON_ERROR"   "$1"; }
+# Logging functions
+log_trace()   { _log_message "TRACE"   "$GRAY"   "${ICON_ARROW:-→}" "$1"; }
+log_debug()   { _log_message "DEBUG"   "$PURPLE" "${ICON_GEAR:-⚙}"  "$1"; }
+log_info()    { _log_message "INFO"    "$BLUE"   "${ICON_INFO:-ℹ}"   "$1"; }
+log_success() { _log_message "SUCCESS" "$GREEN"  "${ICON_SUCCESS:-✓}" "$1"; }
+log_warning() { _log_message "WARNING" "$YELLOW" "${ICON_WARNING:-⚠}" "$1"; }
+log_error()   { _log_message "ERROR"   "$RED"    "${ICON_ERROR:-✗}"  "$1"; }
 
 # ==============================================================================
-# Progress Board State & Helpers
+# Progress Board System
 # ==============================================================================
 
-PROGRESS_BOARD_ACTIVE=false
-PROGRESS_BOARD_MODE=""
-PROGRESS_BOARD_TOTAL_WEIGHT=0
-PROGRESS_BOARD_FINISHED_WEIGHT=0
-PROGRESS_BOARD_FINISHED_COUNT=0
-PROGRESS_BOARD_SUCCESS_COUNT=0
-PROGRESS_BOARD_FAILED_COUNT=0
-PROGRESS_BOARD_SKIPPED_COUNT=0
-PROGRESS_BOARD_DRY_RUN=false
-PROGRESS_BOARD_LAST_LINES=0
-PROGRESS_BOARD_CAN_REWRITE=true
-
-declare -a PROGRESS_BOARD_ORDER=()
-declare -A PROGRESS_BOARD_LABELS=()
-declare -A PROGRESS_BOARD_STATUS=()
-declare -A PROGRESS_BOARD_PERCENT=()
-declare -A PROGRESS_BOARD_MESSAGES=()
-declare -A PROGRESS_BOARD_WEIGHTS=()
-declare -A PROGRESS_BOARD_FINALIZED=()
-
-declare -A PROGRESS_STATUS_ICONS=(
-    [pending]="○"
-    [running]="▶"
-    [completed]="$ICON_SUCCESS"
-    [failed]="$ICON_ERROR"
-    [skipped]="⚑"
-    [rollback]="↺"
+declare -gA PROGRESS_STATUS_ICONS=(
+    [pending]="${BOX_V:-│}○"
+    [running]="${BOX_V:-│}▶"
+    [completed]="${BOX_V:-│}${ICON_SUCCESS:-✓}"
+    [failed]="${BOX_V:-│}${ICON_ERROR:-✗}"
+    [skipped]="${BOX_V:-│}⊘"
+    [rollback]="${BOX_V:-│}↺"
 )
 
-declare -A PROGRESS_STATUS_COLORS=(
+declare -gA PROGRESS_STATUS_COLORS=(
     [pending]="$GRAY"
     [running]="$YELLOW"
     [completed]="$GREEN"
