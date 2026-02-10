@@ -293,7 +293,7 @@ _install_python_venv_pip() {
 _install_python_venv_git() {
     local name="$1" url="$2"
     local dir="${TOOLS_DIR}/${name}"
-    if [[ -d "$dir/.git" ]]; then
+    if [[ -x "$dir/venv/bin/python" ]] && "$dir/venv/bin/python" -m pip show "$name" >/dev/null 2>&1; then
         print_result "$name" skip
         return 0
     fi
@@ -1237,6 +1237,19 @@ uninstall_custom() {
 #  UPDATE TOOLS
 # ══════════════════════════════════════════════════════════════════════════════
 
+update_script() {
+    progress_init 1
+    section_header "Updating Toolkit Script" 1
+
+    if [[ -d "$SCRIPT_DIR/.git" ]]; then
+        run_action "bbtk script" updated "cd '$SCRIPT_DIR' && git pull --ff-only" || true
+    else
+        run_action "bbtk script" updated "rm -rf '$CLONE_DIR' && git clone --depth 1 '$REPO_URL' '$CLONE_DIR'" || true
+    fi
+
+    section_footer "Toolkit Script"
+}
+
 update_tools() {
     printf "\n  ${BOLD}Updating installed tools…${RESET}\n"
 
@@ -1244,13 +1257,17 @@ update_tools() {
     local count=0 tool
 
     for tool in "${PYTHON_PIP_TOOLS[@]}"; do
-        [[ -d "$TOOLS_DIR/$tool" ]] && (( count++ ))
+        if [[ -x "$TOOLS_DIR/$tool/venv/bin/python" ]] && "$TOOLS_DIR/$tool/venv/bin/python" -m pip show "$tool" >/dev/null 2>&1; then
+            (( count++ ))
+        fi
     done
     for tool in "${PYTHON_PIPX_TOOLS[@]}"; do
         cmd_exists "$tool" && (( count++ ))
     done
     for tool in "${!PYTHON_GIT_TOOLS[@]}"; do
-        [[ -d "$TOOLS_DIR/$tool/.git" ]] && (( count++ ))
+        if [[ -x "$TOOLS_DIR/$tool/venv/bin/python" ]] && "$TOOLS_DIR/$tool/venv/bin/python" -m pip show "$tool" >/dev/null 2>&1; then
+            (( count++ ))
+        fi
     done
     for tool in "${GO_TOOLS_ORDER[@]}"; do
         cmd_exists "$tool" && (( count++ ))
@@ -1271,7 +1288,7 @@ update_tools() {
 
     # Python pip venv tools
     for tool in "${PYTHON_PIP_TOOLS[@]}"; do
-        if [[ -d "$TOOLS_DIR/$tool" ]]; then
+        if [[ -x "$TOOLS_DIR/$tool/venv/bin/python" ]] && "$TOOLS_DIR/$tool/venv/bin/python" -m pip show "$tool" >/dev/null 2>&1; then
             run_action "$tool" updated "'${TOOLS_DIR}/${tool}/venv/bin/pip' install --upgrade $tool -q" || true
         fi
     done
@@ -1283,7 +1300,7 @@ update_tools() {
     done
     # Python git tools
     for tool in "${!PYTHON_GIT_TOOLS[@]}"; do
-        if [[ -d "$TOOLS_DIR/$tool/.git" ]]; then
+        if [[ -x "$TOOLS_DIR/$tool/venv/bin/python" ]] && "$TOOLS_DIR/$tool/venv/bin/python" -m pip show "$tool" >/dev/null 2>&1; then
             run_action "$tool" updated "cd '${TOOLS_DIR}/${tool}' && git pull" || true
         fi
     done

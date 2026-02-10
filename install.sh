@@ -57,6 +57,7 @@ Install options:
 Management:
   --update         Update all installed tools
   --update-wl      Update all wordlists
+    --update-script  Update the toolkit script (git pull)
   --uninstall      Uninstall everything
   --uninstall-sel  Selective uninstall (interactive)
 
@@ -81,6 +82,7 @@ parse_args() {
             --zsh)            MODE="zsh" ;;
             --update)         MODE="update" ;;
             --update-wl)      MODE="update-wl" ;;
+            --update-script)  MODE="update-script" ;;
             --uninstall)      MODE="uninstall" ;;
             --uninstall-sel)  MODE="uninstall-sel" ;;
             --debug)          LOG_LEVEL="debug" ;;
@@ -152,8 +154,9 @@ main() {
         8|custom)         install_custom ;;
         9|update)         update_tools;      summary_title="Update Complete" ;;
         10|update-wl)     update_wordlists;  summary_title="Wordlist Update Complete" ;;
-        11|uninstall)     uninstall_all;     summary_title="Uninstall Complete" ;;
-        12|uninstall-sel) uninstall_custom;  summary_title="Uninstall Complete" ;;
+        11|update-script) update_script;     summary_title="Script Update Complete" ;;
+        12|uninstall)     uninstall_all;     summary_title="Uninstall Complete" ;;
+        13|uninstall-sel) uninstall_custom;  summary_title="Uninstall Complete" ;;
         0)                printf "\n"; log_info "Goodbye!"; exit 0 ;;
         *)                log_error "Invalid choice: $MODE"; exit 1 ;;
     esac

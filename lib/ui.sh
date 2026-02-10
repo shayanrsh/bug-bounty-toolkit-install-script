@@ -47,6 +47,8 @@ PROGRESS_TOTAL=0
 PROGRESS_DONE=0
 PROGRESS_SKIP=0
 PROGRESS_FAIL=0
+PROGRESS_ACTIVE=0
+PROGRESS_PARTIAL=0
 
 progress_init() {
     PROGRESS_TOTAL=$1
@@ -106,10 +108,16 @@ COLS=$(tput cols 2>/dev/null || echo 80)
 _status_line() {
     local name="$1" frame="$2" detail="${3:-}"
     local done=$(( PROGRESS_DONE + PROGRESS_SKIP + PROGRESS_FAIL ))
+    local done_milli=$(( done * 1000 ))
+    if (( PROGRESS_ACTIVE == 1 )); then
+        done_milli=$(( done_milli + PROGRESS_PARTIAL ))
+    fi
+    local total_milli=$(( PROGRESS_TOTAL * 1000 ))
     local pct=0
-    (( PROGRESS_TOTAL > 0 )) && pct=$(( done * 100 / PROGRESS_TOTAL ))
+    (( total_milli > 0 )) && pct=$(( done_milli * 100 / total_milli ))
     (( pct > 100 )) && pct=100
-    local filled=$(( pct * _BAR_W / 100 ))
+    local filled=0
+    (( total_milli > 0 )) && filled=$(( done_milli * _BAR_W / total_milli ))
     (( filled > _BAR_W )) && filled=$_BAR_W
     local bar="${_BARS_FILL[$filled]}${_BARS_EMPTY[$filled]}"
 
@@ -158,12 +166,18 @@ _run_cmd() {
     local name="$1" ok_status="$2"; shift 2
     local cmd="$*"
     local cmdout="/tmp/toolkit-cmd-$$-${RANDOM}.out"
+    local use_stdbuf=0
+    cmd_exists stdbuf && use_stdbuf=1
 
     log_debug "Running: $cmd"
     : > "$cmdout"
 
     # Command output goes to its own temp file (not the global log)
-    eval "$cmd" >> "$cmdout" 2>&1 &
+    if (( use_stdbuf == 1 )); then
+        stdbuf -oL -eL bash -lc "$cmd" >> "$cmdout" 2>&1 &
+    else
+        eval "$cmd" >> "$cmdout" 2>&1 &
+    fi
     local pid=$!
     local idx=0
     local start_s=$SECONDS
@@ -187,6 +201,8 @@ _run_cmd() {
             detail="working…  │  ${elapsed_str}"
         fi
 
+        PROGRESS_ACTIVE=1
+        PROGRESS_PARTIAL=$(( idx * 1000 / _BOUNCE_NFRAMES ))
         _status_line "$name" "${_BOUNCE_FRAMES[$idx]}" "$detail"
         idx=$(( (idx + 1) % _BOUNCE_NFRAMES ))
         sleep 0.12
@@ -198,6 +214,9 @@ _run_cmd() {
     # Append command output to main log, then clean up
     cat "$cmdout" >> "$LOG_FILE" 2>/dev/null
     rm -f "$cmdout"
+
+    PROGRESS_ACTIVE=0
+    PROGRESS_PARTIAL=0
 
     if (( rc == 0 )); then
         print_result "$name" "$ok_status"
@@ -215,11 +234,19 @@ run_bg_with_spinner() {
     local name="$1"; shift
     local cmd="$*"
     local cmdout="/tmp/toolkit-cmd-$$-${RANDOM}.out"
+    local use_stdbuf=0
+    cmd_exists stdbuf && use_stdbuf=1
 
     log_debug "Running (no-count): $cmd"
     : > "$cmdout"
 
-    eval "$cmd" >> "$cmdout" 2>&1 &
+    PROGRESS_ACTIVE=0
+    PROGRESS_PARTIAL=0
+    if (( use_stdbuf == 1 )); then
+        stdbuf -oL -eL bash -lc "$cmd" >> "$cmdout" 2>&1 &
+    else
+        eval "$cmd" >> "$cmdout" 2>&1 &
+    fi
     local pid=$!
     local idx=0
     local start_s=$SECONDS
@@ -298,17 +325,18 @@ show_menu() {
         printf "    ${CYAN} 8${RESET})  Custom Select            ${DIM}— pick categories or individual tools${RESET}\n"
         printf "    ${BOLD}${CYAN} 9${RESET})  Update Tools             ${DIM}— update all installed tools${RESET}\n"
         printf "    ${BOLD}${CYAN}10${RESET})  Update Wordlists         ${DIM}— git pull all wordlists${RESET}\n"
-        printf "    ${RED}11${RESET})  Uninstall Everything     ${DIM}— remove all installed tools${RESET}\n"
-        printf "    ${RED}12${RESET})  Selective Uninstall      ${DIM}— choose what to remove${RESET}\n"
+        printf "    ${BOLD}${CYAN}11${RESET})  Update Script            ${DIM}— git pull the toolkit repo${RESET}\n"
+        printf "    ${RED}12${RESET})  Uninstall Everything     ${DIM}— remove all installed tools${RESET}\n"
+        printf "    ${RED}13${RESET})  Selective Uninstall      ${DIM}— choose what to remove${RESET}\n"
         printf "    ${CYAN} 0${RESET})  Exit\n"
         printf "\n"
-        read -rp "  Choice [0-12]: " MENU_CHOICE
+        read -rp "  Choice [0-13]: " MENU_CHOICE
 
         # Validate input
-        if [[ "$MENU_CHOICE" =~ ^[0-9]+$ ]] && (( MENU_CHOICE >= 0 && MENU_CHOICE <= 12 )); then
+        if [[ "$MENU_CHOICE" =~ ^[0-9]+$ ]] && (( MENU_CHOICE >= 0 && MENU_CHOICE <= 13 )); then
             break
         fi
-        printf "\n  ${RED}[!] Invalid input: '%s'. Please enter a number between 0 and 12.${RESET}\n\n" "$MENU_CHOICE"
+        printf "\n  ${RED}[!] Invalid input: '%s'. Please enter a number between 0 and 13.${RESET}\n\n" "$MENU_CHOICE"
     done
 }
 

@@ -138,8 +138,9 @@ bbtk
    8)  Custom Select            — pick categories or individual tools
    9)  Update Tools             — update all installed tools
   10)  Update Wordlists         — git pull all wordlists
-  11)  Uninstall Everything     — remove all installed tools
-  12)  Selective Uninstall      — choose what to remove
+  11)  Update Script            — git pull the toolkit repo
+  12)  Uninstall Everything     — remove all installed tools
+  13)  Selective Uninstall      — choose what to remove
    0)  Exit
 ```
 
@@ -156,6 +157,7 @@ bbtk
 | `--zsh`           | Zsh + Oh My Zsh only                 |
 | `--update`        | Update all installed tools           |
 | `--update-wl`     | Update all wordlists                 |
+| `--update-script` | Update the toolkit script            |
 | `--uninstall`     | Uninstall everything                 |
 | `--uninstall-sel` | Selective uninstall (interactive)    |
 | `--debug`         | Enable debug-level logging           |
@@ -196,7 +198,7 @@ Supports comma-separated numbers, ranges (`8-15`), or `all`.
 Remove tools **by category** (Y/n per group) or **by individual tool** using the same multi-select picker. Only installed tools are affected.
 
 ```bash
-bbtk --uninstall-sel  # or choose option 12 from the menu
+bbtk --uninstall-sel  # or choose option 13 from the menu
 ```
 
 ## Progress UI
