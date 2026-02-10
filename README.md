@@ -65,7 +65,7 @@ bbtk --version      # v2.2
 | fallparams        | Parameter discovery    |
 | nuclei            | Vulnerability scanner  |
 | cookiemonster     | Cookie analysis        |
-| sourcemapper      | Source map extraction   |
+| sourcemapper      | Source map extraction  |
 | TInjA             | Template injection     |
 | interactsh-client | OOB interaction        |
 
@@ -110,14 +110,14 @@ bbtk --version      # v2.2
 
 ### Zsh + Oh My Zsh
 
-| Component               | Method                     |
-| ----------------------- | -------------------------- |
-| zsh                     | apt                        |
-| Oh My Zsh               | Official installer          |
-| zsh-autosuggestions     | git clone (custom plugin)  |
-| zsh-syntax-highlighting | git clone (custom plugin)  |
-| powerlevel10k           | git clone (custom theme)   |
-| p10k config             | Bundled `.p10k.zsh`        |
+| Component               | Method                    |
+| ----------------------- | ------------------------- |
+| zsh                     | apt                       |
+| Oh My Zsh               | Official installer        |
+| zsh-autosuggestions     | git clone (custom plugin) |
+| zsh-syntax-highlighting | git clone (custom plugin) |
+| powerlevel10k           | git clone (custom theme)  |
+| p10k config             | Bundled `.p10k.zsh`       |
 
 ## Usage
 
@@ -222,16 +222,16 @@ Final results per tool:
 
 Edit [`lib/tools.sh`](lib/tools.sh) — add entries to the appropriate registry array:
 
-| Category        | Array(s) to edit                           |
-| --------------- | ------------------------------------------ |
-| Python pip      | `PYTHON_PIP_TOOLS`                         |
-| Python pipx     | `PYTHON_PIPX_TOOLS`                        |
-| Python git      | `PYTHON_GIT_TOOLS` + `_PYTHON_GIT_ORDER`   |
-| Go tools        | `GO_TOOLS` + `GO_TOOLS_ORDER`              |
-| APT tools       | `APT_TOOLS`                                |
-| Snap tools      | `SNAP_TOOLS`                               |
-| Wordlists (git) | `WORDLIST_GIT` + `WORDLIST_GIT_ORDER`      |
-| Payloads (git)  | `PAYLOAD_GIT`                              |
+| Category        | Array(s) to edit                         |
+| --------------- | ---------------------------------------- |
+| Python pip      | `PYTHON_PIP_TOOLS`                       |
+| Python pipx     | `PYTHON_PIPX_TOOLS`                      |
+| Python git      | `PYTHON_GIT_TOOLS` + `_PYTHON_GIT_ORDER` |
+| Go tools        | `GO_TOOLS` + `GO_TOOLS_ORDER`            |
+| APT tools       | `APT_TOOLS`                              |
+| Snap tools      | `SNAP_TOOLS`                             |
+| Wordlists (git) | `WORDLIST_GIT` + `WORDLIST_GIT_ORDER`    |
+| Payloads (git)  | `PAYLOAD_GIT`                            |
 
 New tools are automatically available in the interactive picker, installer, updater, and uninstaller.
 

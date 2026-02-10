@@ -274,19 +274,20 @@ install_go_tools_category() {
 _install_python_venv_pip() {
     local name="$1"
     local dir="${TOOLS_DIR}/${name}"
-    if [[ -d "$dir" ]] && "$dir/venv/bin/python" -c "import ${name}" 2>/dev/null; then
+    if [[ -d "$dir/venv/bin" ]] && "$dir/venv/bin/python" -c "import ${name}" 2>/dev/null; then
         print_result "$name" skip
         return 0
     fi
     # Clean up any corrupted/leftover directory from incomplete uninstall
     [[ -d "$dir" ]] && rm -rf "$dir" 2>/dev/null
     run_install "$name" "
-        mkdir -p '$dir' && \
-        python3 -m venv '$dir/venv' && \
-        '$dir/venv/bin/pip' install --upgrade pip -q && \
-        '$dir/venv/bin/pip' install '$name' -q && \
-        ln -sf '$dir/venv/bin/$name' '$HOME/.local/bin/$name' 2>/dev/null || true
+        mkdir -p '${dir}' &&
+        python3 -m venv '${dir}/venv' &&
+        '${dir}/venv/bin/pip' install --upgrade pip -q &&
+        '${dir}/venv/bin/pip' install '${name}' -q
     " || true
+    # Create convenience symlink (non-fatal, runs only if install succeeded)
+    [[ -x "${dir}/venv/bin/${name}" ]] && ln -sf "${dir}/venv/bin/${name}" "$HOME/.local/bin/${name}" 2>/dev/null || true
 }
 
 _install_python_venv_git() {
@@ -882,8 +883,8 @@ uninstall_all() {
     # Python venv tools
     local tool
     for tool in "${PYTHON_PIP_TOOLS[@]}"; do
-        if [[ -d "$TOOLS_DIR/$tool" ]]; then
-            run_action "$tool" removed "rm -rf '${TOOLS_DIR}/${tool}' && rm -f '$HOME/.local/bin/$tool'" || true
+        if [[ -d "$TOOLS_DIR/$tool" ]] || [[ -L "$HOME/.local/bin/$tool" ]]; then
+            run_action "$tool" removed "rm -rf '${TOOLS_DIR}/${tool}'; rm -f '$HOME/.local/bin/$tool'" || true
         else
             print_result "$tool" skip
         fi
@@ -898,8 +899,8 @@ uninstall_all() {
     done
     # git python tools
     for tool in "${!PYTHON_GIT_TOOLS[@]}"; do
-        if [[ -d "$TOOLS_DIR/$tool" ]]; then
-            run_action "$tool" removed "rm -rf '${TOOLS_DIR}/${tool}'" || true
+        if [[ -d "$TOOLS_DIR/$tool" ]] || [[ -L "$HOME/.local/bin/$tool" ]]; then
+            run_action "$tool" removed "rm -rf '${TOOLS_DIR}/${tool}'; rm -f '$HOME/.local/bin/$tool'" || true
         else
             print_result "$tool" skip
         fi

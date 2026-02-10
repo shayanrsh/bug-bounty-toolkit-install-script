@@ -150,32 +150,28 @@ print_result() {
     esac
 }
 
-# ── _run_cmd — unified bouncing bar + live output tail (zero subshells in loop)
+# ── _run_cmd — unified bouncing bar + live output tail ────────────────────────
 # Usage: _run_cmd <name> <ok_status> <command_string>
 # ok_status is "done" for install, "removed" for uninstall, "updated" for update
 
 _run_cmd() {
     local name="$1" ok_status="$2"; shift 2
     local cmd="$*"
-    local tmpout="/tmp/toolkit-install-$$.tmp"
+    local cmdout="/tmp/toolkit-cmd-$$-${RANDOM}.out"
 
     log_debug "Running: $cmd"
-    : > "$tmpout"  # truncate
+    : > "$cmdout"
 
-    eval "$cmd" >> "$LOG_FILE" 2>&1 &
+    # Command output goes to its own temp file (not the global log)
+    eval "$cmd" >> "$cmdout" 2>&1 &
     local pid=$!
     local idx=0
-    local start_s=$SECONDS last_line=""
-
-    # Tail the log in background to feed live output
-    tail -f "$LOG_FILE" 2>/dev/null > "$tmpout" &
-    local tail_pid=$!
+    local start_s=$SECONDS
 
     while kill -0 "$pid" 2>/dev/null; do
-        # Read last line without forking (bash builtin)
-        last_line=""
-        if [[ -s "$tmpout" ]]; then
-            while IFS= read -r last_line || [[ -n "$last_line" ]]; do :; done < "$tmpout"
+        local last_line=""
+        if [[ -s "$cmdout" ]]; then
+            last_line=$(tail -1 "$cmdout" 2>/dev/null) || true
             last_line="${last_line#"${last_line%%[![:space:]]*}"}"  # trim leading whitespace
             last_line="${last_line//$'\r'/}"                       # strip \r
         fi
@@ -196,11 +192,12 @@ _run_cmd() {
         sleep 0.12
     done
 
-    kill "$tail_pid" 2>/dev/null; wait "$tail_pid" 2>/dev/null || true
-    rm -f "$tmpout"
-
     local rc=0
     wait "$pid" || rc=$?
+
+    # Append command output to main log, then clean up
+    cat "$cmdout" >> "$LOG_FILE" 2>/dev/null
+    rm -f "$cmdout"
 
     if (( rc == 0 )); then
         print_result "$name" "$ok_status"
@@ -217,23 +214,20 @@ _run_cmd() {
 run_bg_with_spinner() {
     local name="$1"; shift
     local cmd="$*"
-    local tmpout="/tmp/toolkit-install-$$.tmp"
+    local cmdout="/tmp/toolkit-cmd-$$-${RANDOM}.out"
 
     log_debug "Running (no-count): $cmd"
-    : > "$tmpout"
+    : > "$cmdout"
 
-    eval "$cmd" >> "$LOG_FILE" 2>&1 &
+    eval "$cmd" >> "$cmdout" 2>&1 &
     local pid=$!
     local idx=0
-    local start_s=$SECONDS last_line=""
-
-    tail -f "$LOG_FILE" 2>/dev/null > "$tmpout" &
-    local tail_pid=$!
+    local start_s=$SECONDS
 
     while kill -0 "$pid" 2>/dev/null; do
-        last_line=""
-        if [[ -s "$tmpout" ]]; then
-            while IFS= read -r last_line || [[ -n "$last_line" ]]; do :; done < "$tmpout"
+        local last_line=""
+        if [[ -s "$cmdout" ]]; then
+            last_line=$(tail -1 "$cmdout" 2>/dev/null) || true
             last_line="${last_line#"${last_line%%[![:space:]]*}"}"
             last_line="${last_line//$'\r'/}"
         fi
@@ -248,10 +242,12 @@ run_bg_with_spinner() {
         sleep 0.12
     done
 
-    kill "$tail_pid" 2>/dev/null; wait "$tail_pid" 2>/dev/null || true
-    rm -f "$tmpout"
-
     local rc=0; wait "$pid" || rc=$?
+
+    # Append to log and clean up
+    cat "$cmdout" >> "$LOG_FILE" 2>/dev/null
+    rm -f "$cmdout"
+
     printf "\r\033[2K\n\033[2K\033[A"   # clear status line without counting
     return "$rc"
 }
