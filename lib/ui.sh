@@ -100,6 +100,25 @@ _precompute_bounce() {
 }
 _precompute_bounce
 
+# Precompute per-tool progress bars (width=_BOUNCE_W, 0..100)
+declare -a _TOOL_BARS
+_precompute_tool_bars() {
+    local p filled i bar
+    for (( p = 0; p <= 100; p++ )); do
+        filled=$(( p * _BOUNCE_W / 100 ))
+        bar=""
+        for (( i = 0; i < _BOUNCE_W; i++ )); do
+            if (( i < filled )); then
+                bar+="${BAR_FILL}"
+            else
+                bar+="${BAR_EMPTY}"
+            fi
+        done
+        _TOOL_BARS[$p]="$bar"
+    done
+}
+_precompute_tool_bars
+
 # ── Status line (bouncing bar + progress bar + live output on two lines) ─────
 # All arithmetic is inlined — zero subshells in the hot path.
 
@@ -169,6 +188,9 @@ _run_cmd() {
     local use_stdbuf=0
     cmd_exists stdbuf && use_stdbuf=1
 
+    PROGRESS_ACTIVE=0
+    PROGRESS_PARTIAL=0
+
     log_debug "Running: $cmd"
     : > "$cmdout"
 
@@ -201,8 +223,6 @@ _run_cmd() {
             detail="working…  │  ${elapsed_str}"
         fi
 
-        PROGRESS_ACTIVE=1
-        PROGRESS_PARTIAL=$(( idx * 1000 / _BOUNCE_NFRAMES ))
         _status_line "$name" "${_BOUNCE_FRAMES[$idx]}" "$detail"
         idx=$(( (idx + 1) % _BOUNCE_NFRAMES ))
         sleep 0.12
@@ -215,9 +235,6 @@ _run_cmd() {
     cat "$cmdout" >> "$LOG_FILE" 2>/dev/null
     rm -f "$cmdout"
 
-    PROGRESS_ACTIVE=0
-    PROGRESS_PARTIAL=0
-
     if (( rc == 0 )); then
         print_result "$name" "$ok_status"
     else
@@ -225,6 +242,82 @@ _run_cmd() {
         log_debug "FAIL $name (exit $rc) — see $LOG_FILE"
     fi
     return "$rc"
+}
+
+# ── run_steps — multi-step command with monotonic tool progress ─────────────
+# Usage: run_steps <name> <ok_status> <total_steps> <label1> <cmd1> ...
+
+run_steps() {
+    local name="$1" ok_status="$2" total_steps="$3"; shift 3
+    local cmdout="/tmp/toolkit-cmd-$$-${RANDOM}.out"
+    local use_stdbuf=0
+    cmd_exists stdbuf && use_stdbuf=1
+
+    log_debug "Running (steps): $name"
+    : > "$cmdout"
+
+    local step_idx=1
+    while (( $# >= 2 )); do
+        local label="$1" cmd="$2"; shift 2
+        local start_s=$SECONDS
+        local idx=0
+
+        PROGRESS_ACTIVE=1
+        PROGRESS_PARTIAL=$(( (step_idx - 1) * 1000 / total_steps ))
+
+        if (( use_stdbuf == 1 )); then
+            stdbuf -oL -eL bash -lc "$cmd" >> "$cmdout" 2>&1 &
+        else
+            eval "$cmd" >> "$cmdout" 2>&1 &
+        fi
+        local pid=$!
+
+        while kill -0 "$pid" 2>/dev/null; do
+            local last_line=""
+            if [[ -s "$cmdout" ]]; then
+                last_line=$(tail -1 "$cmdout" 2>/dev/null) || true
+                last_line="${last_line#"${last_line%%[![:space:]]*}"}"
+                last_line="${last_line//$'\r'/}"
+            fi
+
+            local elapsed_s=$(( SECONDS - start_s ))
+            local elapsed_str="${elapsed_s}s"
+            (( elapsed_s >= 60 )) && elapsed_str="$(( elapsed_s / 60 ))m$(( elapsed_s % 60 ))s"
+
+            local tool_pct=$(( (step_idx - 1) * 100 / total_steps ))
+            local detail="step ${step_idx}/${total_steps} (${tool_pct}%) - ${label}"
+            if [[ -n "$last_line" ]]; then
+                detail="${detail} - ${last_line}"
+            fi
+            detail="${detail}  |  ${elapsed_str}"
+
+            _status_line "$name" "${_TOOL_BARS[$tool_pct]}" "$detail"
+            idx=$(( (idx + 1) % _BOUNCE_NFRAMES ))
+            sleep 0.12
+        done
+
+        local rc=0
+        wait "$pid" || rc=$?
+        if (( rc != 0 )); then
+            cat "$cmdout" >> "$LOG_FILE" 2>/dev/null
+            rm -f "$cmdout"
+            PROGRESS_ACTIVE=0
+            PROGRESS_PARTIAL=0
+            print_result "$name" fail
+            log_debug "FAIL $name (step $step_idx/$total_steps, exit $rc) — see $LOG_FILE"
+            return "$rc"
+        fi
+
+        PROGRESS_PARTIAL=$(( step_idx * 1000 / total_steps ))
+        (( step_idx++ ))
+    done
+
+    cat "$cmdout" >> "$LOG_FILE" 2>/dev/null
+    rm -f "$cmdout"
+    PROGRESS_ACTIVE=0
+    PROGRESS_PARTIAL=0
+    print_result "$name" "$ok_status"
+    return 0
 }
 
 # ── run_bg_with_spinner — shows activity without counting toward progress ────

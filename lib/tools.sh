@@ -271,42 +271,52 @@ install_go_tools_category() {
 #  INSTALL — PYTHON TOOLS  (venv per tool in ~/tools/)
 # ══════════════════════════════════════════════════════════════════════════════
 
+_python_venv_has_pkg() {
+    local dir="$1" pkg="$2"
+    [[ -x "$dir/venv/bin/python" ]] && "$dir/venv/bin/python" -m pip show "$pkg" >/dev/null 2>&1
+}
+
+_python_venv_marker_ok() {
+    local dir="$1"
+    [[ -f "$dir/.installed.ok" ]] && [[ -x "$dir/venv/bin/python" ]]
+}
+
 _install_python_venv_pip() {
     local name="$1"
     local dir="${TOOLS_DIR}/${name}"
-    if [[ -d "$dir/venv/bin" ]] && "$dir/venv/bin/python" -c "import ${name}" 2>/dev/null; then
+    if _python_venv_has_pkg "$dir" "$name"; then
         print_result "$name" skip
         return 0
     fi
     # Clean up any corrupted/leftover directory from incomplete uninstall
     [[ -d "$dir" ]] && rm -rf "$dir" 2>/dev/null
-    run_install "$name" "
-        mkdir -p '${dir}' &&
-        python3 -m venv '${dir}/venv' &&
-        '${dir}/venv/bin/pip' install --upgrade pip -q &&
-        '${dir}/venv/bin/pip' install '${name}' -q
-    " || true
-    # Create convenience symlink (non-fatal, runs only if install succeeded)
-    [[ -x "${dir}/venv/bin/${name}" ]] && ln -sf "${dir}/venv/bin/${name}" "$HOME/.local/bin/${name}" 2>/dev/null || true
+    if run_steps "$name" done 3 \
+        "Create venv" "mkdir -p '${dir}' && python3 -m venv '${dir}/venv'" \
+        "Upgrade pip" "'${dir}/venv/bin/pip' install --upgrade pip -q" \
+        "Install package" "'${dir}/venv/bin/pip' install '${name}' -q"; then
+        # Create convenience symlink (non-fatal, runs only if install succeeded)
+        [[ -x "${dir}/venv/bin/${name}" ]] && ln -sf "${dir}/venv/bin/${name}" "$HOME/.local/bin/${name}" 2>/dev/null || true
+        : > "$dir/.installed.ok"
+    fi
 }
 
 _install_python_venv_git() {
     local name="$1" url="$2"
     local dir="${TOOLS_DIR}/${name}"
-    if [[ -x "$dir/venv/bin/python" ]] && "$dir/venv/bin/python" -m pip show "$name" >/dev/null 2>&1; then
+    if [[ -d "$dir/.git" ]] && _python_venv_marker_ok "$dir"; then
         print_result "$name" skip
         return 0
     fi
     # Clean up any leftover directory from incomplete uninstall
     [[ -d "$dir" ]] && rm -rf "$dir" 2>/dev/null
-    run_install "$name" "
-        git clone --depth 1 '${url}' '${dir}' && \
-        python3 -m venv '${dir}/venv' && \
-        '${dir}/venv/bin/pip' install --upgrade pip -q && \
-        ( [[ -f '${dir}/requirements.txt' ]] && '${dir}/venv/bin/pip' install -r '${dir}/requirements.txt' -q || true ) && \
-        ( [[ -f '${dir}/setup.py' ]] && '${dir}/venv/bin/pip' install -e '${dir}' -q || true ) && \
-        ( [[ -f '${dir}/pyproject.toml' ]] && '${dir}/venv/bin/pip' install -e '${dir}' -q || true )
-    " || true
+    if run_steps "$name" done 5 \
+        "Clone repository" "git clone --depth 1 '${url}' '${dir}'" \
+        "Create venv" "python3 -m venv '${dir}/venv'" \
+        "Upgrade pip" "'${dir}/venv/bin/pip' install --upgrade pip -q" \
+        "Install requirements" "if [[ -f '${dir}/requirements.txt' ]]; then '${dir}/venv/bin/pip' install -r '${dir}/requirements.txt' -q; fi" \
+        "Install package" "if [[ -f '${dir}/setup.py' ]]; then '${dir}/venv/bin/pip' install -e '${dir}' -q; fi; if [[ -f '${dir}/pyproject.toml' ]]; then '${dir}/venv/bin/pip' install -e '${dir}' -q; fi"; then
+        : > "$dir/.installed.ok"
+    fi
 }
 
 _install_python_pipx() {
@@ -1257,7 +1267,7 @@ update_tools() {
     local count=0 tool
 
     for tool in "${PYTHON_PIP_TOOLS[@]}"; do
-        if [[ -x "$TOOLS_DIR/$tool/venv/bin/python" ]] && "$TOOLS_DIR/$tool/venv/bin/python" -m pip show "$tool" >/dev/null 2>&1; then
+        if _python_venv_has_pkg "$TOOLS_DIR/$tool" "$tool"; then
             (( count++ ))
         fi
     done
@@ -1265,7 +1275,7 @@ update_tools() {
         cmd_exists "$tool" && (( count++ ))
     done
     for tool in "${!PYTHON_GIT_TOOLS[@]}"; do
-        if [[ -x "$TOOLS_DIR/$tool/venv/bin/python" ]] && "$TOOLS_DIR/$tool/venv/bin/python" -m pip show "$tool" >/dev/null 2>&1; then
+        if _python_venv_marker_ok "$TOOLS_DIR/$tool"; then
             (( count++ ))
         fi
     done
@@ -1288,7 +1298,7 @@ update_tools() {
 
     # Python pip venv tools
     for tool in "${PYTHON_PIP_TOOLS[@]}"; do
-        if [[ -x "$TOOLS_DIR/$tool/venv/bin/python" ]] && "$TOOLS_DIR/$tool/venv/bin/python" -m pip show "$tool" >/dev/null 2>&1; then
+        if _python_venv_has_pkg "$TOOLS_DIR/$tool" "$tool"; then
             run_action "$tool" updated "'${TOOLS_DIR}/${tool}/venv/bin/pip' install --upgrade $tool -q" || true
         fi
     done
@@ -1300,7 +1310,7 @@ update_tools() {
     done
     # Python git tools
     for tool in "${!PYTHON_GIT_TOOLS[@]}"; do
-        if [[ -x "$TOOLS_DIR/$tool/venv/bin/python" ]] && "$TOOLS_DIR/$tool/venv/bin/python" -m pip show "$tool" >/dev/null 2>&1; then
+        if _python_venv_marker_ok "$TOOLS_DIR/$tool"; then
             run_action "$tool" updated "cd '${TOOLS_DIR}/${tool}' && git pull" || true
         fi
     done
