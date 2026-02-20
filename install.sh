@@ -6,7 +6,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
-VERSION="2.2"
+VERSION="2.3"
 REPO_URL="https://github.com/shayanrsh/bug-bounty-toolkit-install-script.git"
 CLONE_DIR="/tmp/bug-bounty-toolkit-install-script"
 
@@ -107,23 +107,34 @@ preflight() {
 
 # ── Install the ‘bbtk’ shell alias ────────────────────────────────────────
 install_bbtk_alias() {
+    # Optional arg: explicit rc file path. Defaults to detected shell rc.
+    local rc_file="${1:-}"
+    [[ -z "$rc_file" ]] && rc_file=$(get_rc_file)
+
     local real_path
     real_path="$(cd "$SCRIPT_DIR" && pwd)/install.sh"
     local marker="# bbtk alias (bug-bounty-toolkit)"
     local alias_line="alias bbtk='bash \"${real_path}\"'"
-    local rc_file
-    rc_file=$(get_rc_file)
+
+    touch "$rc_file" 2>/dev/null || true
 
     if grep -qF "$marker" "$rc_file" 2>/dev/null; then
         # Update the path in case the repo moved
-        sed -i "/# bbtk alias/d; /alias bbtk=/d" "$rc_file" 2>/dev/null || true
+        sed -i "/^# bbtk alias (bug-bounty-toolkit)$/,/^alias bbtk=/d" "$rc_file" 2>/dev/null || true
+        sed -i "/^alias bbtk=/d" "$rc_file" 2>/dev/null || true
     fi
+
     {
         echo ""
         echo "$marker"
         echo "$alias_line"
     } >> "$rc_file"
     log_debug "Installed bbtk alias in $rc_file"
+}
+
+install_bbtk_alias_for_shell() {
+    local shell_name="$1"
+    install_bbtk_alias "$(get_rc_file_for_shell "$shell_name")"
 }
 
 # ── Main ─────────────────────────────────────────────────────────────────────

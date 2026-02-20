@@ -1,17 +1,23 @@
 # bbtk — Bug Bounty Toolkit Installer
 
-> Idempotent, single-command security tool installer for Ubuntu servers.
-> 45+ tools with real-time progress UI, individual tool picker, selective uninstall, update, and full management capabilities.
+Idempotent, single-command security tool installer for Ubuntu servers.
+
+- Interactive menu + custom tool picker (categories or individual tools)
+- Real-time progress UI + per-tool success/fail reporting
+- Update + selective uninstall workflows
+- Installs tools into predictable locations and makes them runnable from your `$PATH`
+
+Current version: **v2.3**
 
 ## Quick Start
 
-**One-liner (curl pipe):**
+### One-liner (curl pipe)
 
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/shayanrsh/bug-bounty-toolkit-install-script/main/install.sh)
 ```
 
-**Manual clone:**
+### Manual clone
 
 ```bash
 git clone https://github.com/shayanrsh/bug-bounty-toolkit-install-script.git
@@ -20,24 +26,29 @@ chmod +x install.sh
 ./install.sh
 ```
 
-After the first run, the `bbtk` alias is installed in your shell. Use it to access the toolkit from anywhere:
+After running once, `bbtk` is added as a shell alias so you can run the toolkit from anywhere:
 
 ```bash
-bbtk                # Interactive menu
-bbtk --help         # Show all options
-bbtk --version      # v2.2
+bbtk            # Interactive menu
+bbtk --help     # Show all options
+bbtk --version  # v2.3
 ```
 
 ## Prerequisites
 
-- Ubuntu 20.04+ (or WSL2)
+- Ubuntu 20.04+ (Ubuntu 24.04 supported)
 - `sudo` access
 - Internet connectivity
 - ~5 GB free disk space
 
-## Tools Installed
+## What gets installed (and where)
 
-### Python Tools (`~/tools/`, each in its own venv)
+### Python tools (each in its own venv)
+
+- Install location: `~/tools/<tool>/venv/`
+- Launchers: `~/.local/bin/<tool>` (added to `PATH` by your shell)
+
+Tools:
 
 | Tool    | Method           |
 | ------- | ---------------- |
@@ -49,7 +60,10 @@ bbtk --version      # v2.2
 | ghauri  | git clone + venv |
 | SSTImap | git clone + venv |
 
-### Go Tools (installed via `go install`)
+### Go tools
+
+- Go is installed via `snap` if missing.
+- `GOPATH/bin` is added to your shell `PATH` so installed binaries are runnable.
 
 | Tool              | Description            |
 | ----------------- | ---------------------- |
@@ -69,7 +83,7 @@ bbtk --version      # v2.2
 | TInjA             | Template injection     |
 | interactsh-client | OOB interaction        |
 
-### Rust Tool
+### Rust tool
 
 | Tool | Method                                   |
 | ---- | ---------------------------------------- |
@@ -77,10 +91,15 @@ bbtk --version      # v2.2
 
 ### Docker
 
+- Docker CE is installed via the official Docker APT repository.
+- The installer removes stale Docker repo entries (common cause of failed installs) and verifies the install.
+
 | Tool      | Method                            |
 | --------- | --------------------------------- |
 | Docker CE | Official Docker repository        |
 | jwt_tool  | Docker alias (`ticarpi/jwt_tool`) |
+
+Note: the installer adds your user to the `docker` group. You may need to **log out and back in** for group membership to apply.
 
 ### APT / Snap
 
@@ -92,7 +111,9 @@ bbtk --version      # v2.2
 | netcat-openbsd | apt    |
 | dalfox         | snap   |
 
-### Wordlists & Payloads (`~/wordlists/`)
+### Wordlists & payloads
+
+- Install location: `~/wordlists/`
 
 | Wordlist             | Source                                   |
 | -------------------- | ---------------------------------------- |
@@ -110,145 +131,73 @@ bbtk --version      # v2.2
 
 ### Zsh + Oh My Zsh
 
-| Component               | Method                    |
-| ----------------------- | ------------------------- |
-| zsh                     | apt                       |
-| Oh My Zsh               | Official installer        |
-| zsh-autosuggestions     | git clone (custom plugin) |
-| zsh-syntax-highlighting | git clone (custom plugin) |
-| powerlevel10k           | git clone (custom theme)  |
-| p10k config             | Bundled `.p10k.zsh`       |
+| Component               | Method              |
+| ----------------------- | ------------------- |
+| zsh                     | apt                 |
+| Oh My Zsh               | official installer  |
+| zsh-autosuggestions     | git clone           |
+| zsh-syntax-highlighting | git clone           |
+| powerlevel10k           | git clone           |
+| p10k config             | bundled `.p10k.zsh` |
+
+When you install Zsh via **option 7** (or via Custom Select), `bbtk` is also added to `~/.zshrc` automatically.
 
 ## Usage
 
-### Interactive Menu
+### Interactive menu
 
 ```bash
 bbtk
 ```
 
-```
-   1)  Full Install             — all tools, wordlists, payloads
-   2)  Python Tools             — shodan, sqlmap, waymore …
-   3)  Go Tools                 — subfinder, nuclei, httpx …
-   4)  Docker + Docker Tools    — docker, jwt_tool
-   5)  APT / Snap Tools         — dalfox, hydra, whois …
-   6)  Wordlists & Payloads     — SecLists, assetnote …
-   7)  Zsh + Oh My Zsh          — zsh, powerlevel10k, plugins
-   8)  Custom Select            — pick categories or individual tools
-   9)  Update Tools             — update all installed tools
-  10)  Update Wordlists         — git pull all wordlists
-  11)  Update Script            — git pull the toolkit repo
-  12)  Uninstall Everything     — remove all installed tools
-  13)  Selective Uninstall      — choose what to remove
-   0)  Exit
-```
-
-### CLI Flags
+### CLI flags
 
 | Flag              | Description                          |
 | ----------------- | ------------------------------------ |
 | `--full`          | Install everything (non-interactive) |
-| `--python`        | Python tools only                    |
-| `--go`            | Go + Rust tools only                 |
-| `--docker`        | Docker + Docker tools only           |
-| `--apt`           | APT / Snap tools only                |
-| `--wordlists`     | Wordlists & payloads only            |
-| `--zsh`           | Zsh + Oh My Zsh only                 |
-| `--update`        | Update all installed tools           |
-| `--update-wl`     | Update all wordlists                 |
-| `--update-script` | Update the toolkit script            |
+| `--python`        | Install Python tools only            |
+| `--go`            | Install Go + Rust tools only         |
+| `--docker`        | Install Docker + Docker tools only   |
+| `--apt`           | Install APT/Snap tools only          |
+| `--wordlists`     | Install wordlists & payloads only    |
+| `--zsh`           | Install Zsh + Oh My Zsh only         |
+| `--update`        | Update installed tools               |
+| `--update-wl`     | Update installed wordlists           |
+| `--update-script` | Update this toolkit repo             |
 | `--uninstall`     | Uninstall everything                 |
 | `--uninstall-sel` | Selective uninstall (interactive)    |
-| `--debug`         | Enable debug-level logging           |
+| `--debug`         | Enable debug logging                 |
 | `-v`, `--version` | Show version                         |
-| `-h`, `--help`    | Show help message                    |
+| `-h`, `--help`    | Show help                            |
+
+Examples:
 
 ```bash
-bbtk --full           # Install everything
-bbtk --python         # Python tools only
-bbtk --go             # Go + Rust tools
-bbtk --zsh            # Zsh + Oh My Zsh
-bbtk --update         # Update all tools
-bbtk --uninstall-sel  # Choose what to remove
-bbtk --debug          # Verbose logging
+bbtk --full
+bbtk --docker
+bbtk --uninstall-sel
+bbtk --debug
 ```
 
 ### Custom Select (Option 8)
 
-Pick tools by **category** (Y/n per group) or by **individual tool** using a numbered multi-select picker:
+You can install by:
 
-```
-  ── Python ─────────────────────────────────────────────────
-    1) shodan               2) waymore             3) uro
-    4) commix               5) sqlmap              6) ghauri
-    7) SSTImap
+- **Category** (Y/n prompts)
+- **Individual tool** (multi-select with comma/range support: `1,3,8-15` or `all`)
 
-  ── Go + Rust ──────────────────────────────────────────────
-    8) subfinder            9) amass              10) ffuf
-   ...
+## Adding/removing tools
 
-  Tools: 1,5,8-12,31
-```
+Edit `lib/tools.sh` and update the relevant registry arrays:
 
-Supports comma-separated numbers, ranges (`8-15`), or `all`.
-
-### Selective Uninstall (Option 12)
-
-Remove tools **by category** (Y/n per group) or **by individual tool** using the same multi-select picker. Only installed tools are affected.
-
-```bash
-bbtk --uninstall-sel  # or choose option 13 from the menu
-```
-
-## Progress UI
-
-Each tool shows a two-line live display with bouncing progress bar and live output:
-
-```
-  [░░███░░░] nuclei            │ [████████░░░░░░░░░░░░] 35% (12/40)
-       └─ go: downloading github.com/projectdiscovery/nuclei…  │  18s
-```
-
-Final results per tool:
-
-```
-  [✓]  nuclei                    installed
-  [⊘]  httpx                     already installed
-  [✗]  feroxbuster               failed
-  [✕]  sqlmap                    removed
-  [✓]  subfinder                 updated
-```
-
-## Adding or Removing Tools
-
-Edit [`lib/tools.sh`](lib/tools.sh) — add entries to the appropriate registry array:
-
-| Category        | Array(s) to edit                         |
-| --------------- | ---------------------------------------- |
-| Python pip      | `PYTHON_PIP_TOOLS`                       |
-| Python pipx     | `PYTHON_PIPX_TOOLS`                      |
-| Python git      | `PYTHON_GIT_TOOLS` + `_PYTHON_GIT_ORDER` |
-| Go tools        | `GO_TOOLS` + `GO_TOOLS_ORDER`            |
-| APT tools       | `APT_TOOLS`                              |
-| Snap tools      | `SNAP_TOOLS`                             |
-| Wordlists (git) | `WORDLIST_GIT` + `WORDLIST_GIT_ORDER`    |
-| Payloads (git)  | `PAYLOAD_GIT`                            |
-
-New tools are automatically available in the interactive picker, installer, updater, and uninstaller.
-
-## Project Structure
-
-```
-install.sh          Entry point — CLI parsing, preflight, menu dispatch, bbtk alias
-.p10k.zsh           Bundled Powerlevel10k configuration
-lib/
-  utils.sh          Logging, system checks, shell detection, prerequisite bootstrap
-  ui.sh             Colors, progress bars, bouncing indicator, menus, tool picker, summary
-  tools.sh          Tool registry, install/uninstall/update for all categories
-README.md           This file
-LICENSE             MIT
-```
+- Python (pip/venv): `PYTHON_PIP_TOOLS`
+- Python (pipx): `PYTHON_PIPX_TOOLS`
+- Python (git): `PYTHON_GIT_TOOLS` + `_PYTHON_GIT_ORDER`
+- Go: `GO_TOOLS` + `GO_TOOLS_ORDER`
+- APT: `APT_TOOLS`
+- Snap: `SNAP_TOOLS`
+- Wordlists: `WORDLIST_GIT` + `WORDLIST_GIT_ORDER`
+- Payloads: `PAYLOAD_GIT`
 
 ## License
 

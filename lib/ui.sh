@@ -35,7 +35,7 @@ setup_symbols
 show_banner() {
     printf "\n"
     printf "  ${CYAN}╔═══════════════════════════════════════════════════════════╗${RESET}\n"
-    printf "  ${CYAN}║${RESET}   ${BOLD}${WHITE}Bug Bounty Toolkit Installer${RESET}  ${DIM}v2.2${RESET}                    ${CYAN}║${RESET}\n"
+    printf "  ${CYAN}║${RESET}   ${BOLD}${WHITE}Bug Bounty Toolkit Installer${RESET}  ${DIM}v%s${RESET}                    ${CYAN}║${RESET}\n" "${VERSION:-2.3}"
     printf "  ${CYAN}║${RESET}   ${DIM}Security tools for Ubuntu servers${RESET}                      ${CYAN}║${RESET}\n"
     printf "  ${CYAN}╚═══════════════════════════════════════════════════════════╝${RESET}\n"
     printf "\n"

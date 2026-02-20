@@ -136,15 +136,30 @@ _REG_COUNT=${#_REG_NAMES[@]}
 # ══════════════════════════════════════════════════════════════════════════════
 
 install_go_lang() {
+    local installed_now=0
     if cmd_exists go; then
         print_result "go (language)" skip
-        return 0
+    else
+        if ! cmd_exists snap; then
+            sudo apt-get install -y -qq snapd >> "$LOG_FILE" 2>&1
+        fi
+        run_install "go (language)" "sudo snap install go --classic" || return 1
+        installed_now=1
     fi
-    if ! cmd_exists snap; then
-        sudo apt-get install -y -qq snapd >> "$LOG_FILE" 2>&1
-    fi
-    run_install "go (language)" "sudo snap install go --classic" || return 1
 
+    # Ensure PATH is correct for this session even if Go was already installed
+    export PATH="$PATH:/snap/bin:/usr/local/go/bin"
+    local gopath
+    if cmd_exists go; then
+        gopath=$(go env GOPATH 2>/dev/null || echo "$HOME/go")
+    else
+        gopath="$HOME/go"
+    fi
+    export GOPATH="$gopath"
+    export PATH="$PATH:${gopath}/bin"
+    mkdir -p "${gopath}"/{bin,src,pkg} 2>/dev/null || true
+
+    # Persist environment for the user’s current shell
     local rc_file marker
     rc_file=$(get_rc_file)
     marker="# Go environment (toolkit)"
@@ -152,16 +167,16 @@ install_go_lang() {
         {
             echo ""
             echo "$marker"
+            echo 'export PATH=$PATH:/snap/bin'
             echo 'export PATH=$PATH:/usr/local/go/bin'
             echo 'export PATH=$PATH:$(go env GOPATH)/bin'
         } >> "$rc_file"
     fi
-    export PATH="$PATH:/snap/bin:/usr/local/go/bin"
-    local gopath
-    gopath=$(go env GOPATH 2>/dev/null || echo "$HOME/go")
-    export PATH="$PATH:${gopath}/bin"
-    export GOPATH="$gopath"
-    mkdir -p "${gopath}"/{bin,src,pkg} 2>/dev/null || true
+
+    # If Go was installed in this run, give snap a moment to register the command
+    if (( installed_now )); then
+        command -v go >/dev/null 2>&1 || true
+    fi
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -204,6 +219,14 @@ install_go_tools_category() {
     install_go_lang
     install_rust_and_x8
 
+    # Ensure this session can see GOPATH/bin so cmd_exists checks are accurate
+    if cmd_exists go; then
+        local _gopath_session
+        _gopath_session=$(go env GOPATH 2>/dev/null || echo "$HOME/go")
+        export PATH="$PATH:${_gopath_session}/bin"
+        export GOPATH="$_gopath_session"
+    fi
+
     if ! cmd_exists go; then
         log_error "Go is not installed — skipping Go tools"
         local t; for t in "${GO_TOOLS_ORDER[@]}"; do print_result "$t" fail; done
@@ -236,7 +259,7 @@ install_go_tools_category() {
                 if ! kill -0 "${bg_pids[$t]}" 2>/dev/null; then
                     local rc=0
                     wait "${bg_pids[$t]}" || rc=$?
-                    if (( rc == 0 )); then print_result "$t" done; else print_result "$t" fail; fi
+                    if (( rc == 0 )) && cmd_exists "$t"; then print_result "$t" done; else print_result "$t" fail; fi
                     unset "bg_pids[$t]"
                     (( running-- ))
                 fi
@@ -248,7 +271,7 @@ install_go_tools_category() {
                     if ! kill -0 "${bg_pids[$t]}" 2>/dev/null; then
                         local rc=0
                         wait "${bg_pids[$t]}" || rc=$?
-                        if (( rc == 0 )); then print_result "$t" done; else print_result "$t" fail; fi
+                        if (( rc == 0 )) && cmd_exists "$t"; then print_result "$t" done; else print_result "$t" fail; fi
                         unset "bg_pids[$t]"
                         (( running-- ))
                     fi
@@ -261,7 +284,7 @@ install_go_tools_category() {
     for t in "${!bg_pids[@]}"; do
         local rc=0
         wait "${bg_pids[$t]}" || rc=$?
-        if (( rc == 0 )); then print_result "$t" done; else print_result "$t" fail; fi
+        if (( rc == 0 )) && cmd_exists "$t"; then print_result "$t" done; else print_result "$t" fail; fi
     done
 
     section_footer "Go + Rust Tools"
@@ -270,6 +293,40 @@ install_go_tools_category() {
 # ══════════════════════════════════════════════════════════════════════════════
 #  INSTALL — PYTHON TOOLS  (venv per tool in ~/tools/)
 # ══════════════════════════════════════════════════════════════════════════════
+
+_ensure_python_launcher() {
+    local name="$1" dir="$2"
+    mkdir -p "$HOME/.local/bin" 2>/dev/null || true
+    export PATH="$PATH:$HOME/.local/bin"
+
+    # Prefer real console_scripts installed into the venv
+    if [[ -x "$dir/venv/bin/$name" ]]; then
+        ln -sf "$dir/venv/bin/$name" "$HOME/.local/bin/$name" 2>/dev/null || true
+        return 0
+    fi
+
+    # Known “run the repo’s main .py” tools
+    local main_py=""
+    case "$name" in
+        sqlmap)  main_py="sqlmap.py" ;;
+        commix)  main_py="commix.py" ;;
+        SSTImap) main_py="sstimap.py" ;;
+    esac
+
+    if [[ -n "$main_py" ]] && [[ -f "$dir/$main_py" ]] && [[ -x "$dir/venv/bin/python" ]]; then
+        local launcher="$HOME/.local/bin/$name"
+        {
+            echo '#!/usr/bin/env bash'
+            echo "exec \"$dir/venv/bin/python\" \"$dir/$main_py\" \"\$@\""
+        } > "$launcher"
+        chmod +x "$launcher" 2>/dev/null || true
+
+        # Convenience alias for SSTImap’s common invocation name
+        if [[ "$name" == "SSTImap" ]]; then
+            ln -sf "$launcher" "$HOME/.local/bin/sstimap" 2>/dev/null || true
+        fi
+    fi
+}
 
 _python_venv_has_pkg() {
     local dir="$1" pkg="$2"
@@ -315,6 +372,7 @@ _install_python_venv_git() {
         "Upgrade pip" "'${dir}/venv/bin/pip' install --upgrade pip -q" \
         "Install requirements" "if [[ -f '${dir}/requirements.txt' ]]; then '${dir}/venv/bin/pip' install -r '${dir}/requirements.txt' -q; fi" \
         "Install package" "if [[ -f '${dir}/setup.py' ]]; then '${dir}/venv/bin/pip' install -e '${dir}' -q; fi; if [[ -f '${dir}/pyproject.toml' ]]; then '${dir}/venv/bin/pip' install -e '${dir}' -q; fi"; then
+        _ensure_python_launcher "$name" "$dir"
         : > "$dir/.installed.ok"
     fi
 }
@@ -370,13 +428,14 @@ echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.d
     | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 sudo apt-get update -qq'
 
-    run_steps "docker" done 6 \
-        "Remove conflicts"  'sudo apt-get remove -y docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc 2>/dev/null || true' \
+    run_steps "docker" done 7 \
+        "Remove conflicts"  'sudo apt-get remove -y docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc 2>/dev/null || true; sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/sources.list.d/docker.sources /etc/apt/keyrings/docker.gpg /etc/apt/keyrings/docker.asc 2>/dev/null || true' \
         "Prerequisites"     'sudo apt-get update -qq && sudo apt-get install -y -qq ca-certificates curl gnupg' \
         "Add GPG key"       'sudo install -m 0755 -d /etc/apt/keyrings && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && sudo chmod a+r /etc/apt/keyrings/docker.gpg' \
         "Add repository"    "$_add_repo" \
         "Install packages"  'sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin' \
-        "Enable service"    'sudo systemctl enable docker --now 2>/dev/null || true; sudo usermod -aG docker "$(whoami)" 2>/dev/null || true' \
+        "Enable service"    'if command -v systemctl >/dev/null 2>&1; then sudo systemctl enable docker --now 2>/dev/null || true; elif command -v service >/dev/null 2>&1; then sudo service docker start 2>/dev/null || true; fi; sudo usermod -aG docker "$(whoami)" 2>/dev/null || true' \
+        "Verify"            'sudo docker version >/dev/null 2>&1 && sudo docker compose version >/dev/null 2>&1' \
     || true
 }
 
@@ -595,6 +654,9 @@ install_zsh_category() {
     # Configure .zshrc, p10k, default shell
     _configure_zshrc
 
+    # Ensure bbtk alias is available in zsh when user chooses to install zsh
+    install_bbtk_alias_for_shell zsh
+
     section_footer "Zsh + Oh My Zsh"
 }
 
@@ -755,6 +817,7 @@ _install_single_tool() {
             else
                 run_install "zsh" "sudo apt-get install -y -qq zsh git fonts-font-awesome" || true
             fi
+            install_bbtk_alias_for_shell zsh
             ;;
         zsh-omz)
             if [[ -d "$HOME/.oh-my-zsh" ]]; then
@@ -762,6 +825,7 @@ _install_single_tool() {
             else
                 run_install "oh-my-zsh" "RUNZSH=no CHSH=no sh -c \"\$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)\" \"\" --unattended" || true
             fi
+            install_bbtk_alias_for_shell zsh
             ;;
         zsh-plugin)
             local zsh_custom="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
@@ -911,7 +975,11 @@ uninstall_all() {
     # git python tools
     for tool in "${!PYTHON_GIT_TOOLS[@]}"; do
         if [[ -d "$TOOLS_DIR/$tool" ]] || [[ -L "$HOME/.local/bin/$tool" ]]; then
-            run_action "$tool" removed "rm -rf '${TOOLS_DIR}/${tool}'; rm -f '$HOME/.local/bin/$tool'" || true
+            if [[ "$tool" == "SSTImap" ]]; then
+                run_action "$tool" removed "rm -rf '${TOOLS_DIR}/${tool}'; rm -f '$HOME/.local/bin/$tool' '$HOME/.local/bin/sstimap'" || true
+            else
+                run_action "$tool" removed "rm -rf '${TOOLS_DIR}/${tool}'; rm -f '$HOME/.local/bin/$tool'" || true
+            fi
         else
             print_result "$tool" skip
         fi
@@ -1057,7 +1125,11 @@ _uninstall_single_tool() {
             ;;
         py-git)
             if [[ -d "$TOOLS_DIR/$name" ]]; then
-                run_action "$name" removed "rm -rf '${TOOLS_DIR}/${name}'; rm -f '$HOME/.local/bin/$name'" || true
+                if [[ "$name" == "SSTImap" ]]; then
+                    run_action "$name" removed "rm -rf '${TOOLS_DIR}/${name}'; rm -f '$HOME/.local/bin/$name' '$HOME/.local/bin/sstimap'" || true
+                else
+                    run_action "$name" removed "rm -rf '${TOOLS_DIR}/${name}'; rm -f '$HOME/.local/bin/$name'" || true
+                fi
             else print_result "$name" skip; fi
             ;;
         go)

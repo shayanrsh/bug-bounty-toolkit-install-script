@@ -104,36 +104,68 @@ _DETECTED_SHELL=""
 _CACHED_RC_FILE=""
 
 detect_shell() {
-    if [[ -z "$_DETECTED_SHELL" ]]; then
-        if cmd_exists zsh; then _DETECTED_SHELL="zsh"; else _DETECTED_SHELL="bash"; fi
+    if [[ -n "$_DETECTED_SHELL" ]]; then
+        echo "$_DETECTED_SHELL"
+        return 0
     fi
+
+    # Prefer the user’s login shell ($SHELL) so running via `bash install.sh`
+    # still configures the shell the user actually uses.
+    if [[ -n "${SHELL-}" ]] && [[ "${SHELL##*/}" == "zsh" ]]; then
+        _DETECTED_SHELL="zsh"
+    elif [[ -n "${ZSH_VERSION-}" ]]; then
+        _DETECTED_SHELL="zsh"
+    elif [[ -n "${BASH_VERSION-}" ]]; then
+        _DETECTED_SHELL="bash"
+    else
+        _DETECTED_SHELL="bash"
+    fi
+
     echo "$_DETECTED_SHELL"
+}
+
+get_rc_file_for_shell() {
+    local shell_name="${1:-bash}"
+    case "$shell_name" in
+        zsh) echo "${HOME}/.zshrc" ;;
+        *)   echo "${HOME}/.bashrc" ;;
+    esac
 }
 
 get_rc_file() {
     if [[ -z "$_CACHED_RC_FILE" ]]; then
-        case "$(detect_shell)" in
-            zsh) _CACHED_RC_FILE="${HOME}/.zshrc" ;;
-            *)   _CACHED_RC_FILE="${HOME}/.bashrc" ;;
-        esac
+        _CACHED_RC_FILE="$(get_rc_file_for_shell "$(detect_shell)")"
     fi
     echo "$_CACHED_RC_FILE"
+}
+
+add_to_rc_file() {
+    local rc_file="$1" line="$2"
+    [[ -z "$rc_file" ]] && return 1
+    touch "$rc_file" 2>/dev/null || true
+    grep -qF "$line" "$rc_file" 2>/dev/null || { echo "$line" >> "$rc_file"; log_debug "Added to $rc_file: $line"; }
+}
+
+remove_from_rc_file() {
+    local rc_file="$1" pattern="$2"
+    [[ -z "$rc_file" ]] && return 1
+    if [[ -f "$rc_file" ]]; then
+        sed -i "\|${pattern}|d" "$rc_file" 2>/dev/null || true
+    fi
 }
 
 add_to_rc() {
     local line="$1"
     local rc_file
     rc_file=$(get_rc_file)
-    grep -qF "$line" "$rc_file" 2>/dev/null || { echo "$line" >> "$rc_file"; log_debug "Added to $rc_file: $line"; }
+    add_to_rc_file "$rc_file" "$line"
 }
 
 remove_from_rc() {
     local pattern="$1"
     local rc_file
     rc_file=$(get_rc_file)
-    if [[ -f "$rc_file" ]]; then
-        sed -i "\|${pattern}|d" "$rc_file" 2>/dev/null || true
-    fi
+    remove_from_rc_file "$rc_file" "$pattern"
 }
 
 # ── Prerequisite bootstrap ──────────────────────────────────────────────────
@@ -160,5 +192,8 @@ ensure_apt_deps() {
         pipx ensurepath >> "$LOG_FILE" 2>&1 || true
         export PATH="$PATH:$HOME/.local/bin"
     fi
+
+    # Ensure launchers are usable in future sessions (pipx + toolkit wrappers)
+    add_to_rc 'export PATH="$PATH:$HOME/.local/bin"'
     log_ok "Prerequisites satisfied"
 }
