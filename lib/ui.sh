@@ -78,26 +78,34 @@ _precompute_bars
 
 _status_line() {
     local name="$1" frame="$2" elapsed="${3:-}"
-    local done=$(( PROGRESS_DONE + PROGRESS_SKIP + PROGRESS_FAIL ))
-    local done_milli=$(( done * 1000 ))
+    local _done=$(( PROGRESS_DONE + PROGRESS_SKIP + PROGRESS_FAIL ))
+    local _done_milli=$(( _done * 1000 ))
     if (( PROGRESS_ACTIVE == 1 )); then
-        done_milli=$(( done_milli + PROGRESS_PARTIAL ))
+        _done_milli=$(( _done_milli + PROGRESS_PARTIAL ))
     fi
-    local total_milli=$(( PROGRESS_TOTAL * 1000 ))
-    local pct=0
-    (( total_milli > 0 )) && pct=$(( done_milli * 100 / total_milli ))
-    (( pct > 100 )) && pct=100
-    local filled=0
-    (( total_milli > 0 )) && filled=$(( done_milli * _BAR_W / total_milli ))
-    (( filled > _BAR_W )) && filled=$_BAR_W
-    local bar="${_BARS_FILL[$filled]}${_BARS_EMPTY[$filled]}"
+    local _total_milli=$(( PROGRESS_TOTAL * 1000 ))
+    local _pct=0
+    (( _total_milli > 0 )) && _pct=$(( _done_milli * 100 / _total_milli )) || true
+    (( _pct > 100 )) && _pct=100 || true
+    local _filled=0
+    (( _total_milli > 0 )) && _filled=$(( _done_milli * _BAR_W / _total_milli )) || true
+    (( _filled > _BAR_W )) && _filled=$_BAR_W || true
+    local _bar="${_BARS_FILL[$_filled]}${_BARS_EMPTY[$_filled]}"
 
+    # Keep colour codes out of the printf format to avoid %/[ confusion.
     if [[ -n "$elapsed" ]]; then
-        printf "\r\033[2K  ${CYAN}%s${RESET}  %-22s  ${GREEN}%s${RESET}  %3d%%  %d/%d  ${DIM}%s${RESET}" \
-            "$frame" "$name" "$bar" "$pct" "$done" "$PROGRESS_TOTAL" "$elapsed"
+        printf "\r\033[2K  %b%s%b  %-22s  %b%s%b  %3d%%  %d/%d  %b%s%b" \
+            "$CYAN" "$frame" "$RESET" \
+            "$name" \
+            "$GREEN" "$_bar" "$RESET" \
+            "$_pct" "$_done" "$PROGRESS_TOTAL" \
+            "$DIM" "$elapsed" "$RESET"
     else
-        printf "\r\033[2K  ${CYAN}%s${RESET}  %-22s  ${GREEN}%s${RESET}  %3d%%  %d/%d" \
-            "$frame" "$name" "$bar" "$pct" "$done" "$PROGRESS_TOTAL"
+        printf "\r\033[2K  %b%s%b  %-22s  %b%s%b  %3d%%  %d/%d" \
+            "$CYAN" "$frame" "$RESET" \
+            "$name" \
+            "$GREEN" "$_bar" "$RESET" \
+            "$_pct" "$_done" "$PROGRESS_TOTAL"
     fi
 }
 
@@ -158,12 +166,13 @@ _run_cmd() {
     local start_s=$SECONDS
 
     local _nspinner=${#SPINNER_FRAMES[@]}
+    (( _nspinner < 1 )) && _nspinner=1
     while kill -0 "$pid" 2>/dev/null; do
         local elapsed_s=$(( SECONDS - start_s ))
         local elapsed_str="${elapsed_s}s"
-        (( elapsed_s >= 60 )) && elapsed_str="$(( elapsed_s / 60 ))m$(( elapsed_s % 60 ))s"
+        (( elapsed_s >= 60 )) && elapsed_str="$(( elapsed_s / 60 ))m$(( elapsed_s % 60 ))s" || true
 
-        _status_line "$name" "${SPINNER_FRAMES[$idx]}" "$elapsed_str"
+        _status_line "$name" "${SPINNER_FRAMES[$idx]:-|}" "$elapsed_str"
         idx=$(( (idx + 1) % _nspinner ))
         sleep 0.12
     done
@@ -213,13 +222,14 @@ run_steps() {
         local pid=$!
 
         local _nspinner=${#SPINNER_FRAMES[@]}
+        (( _nspinner < 1 )) && _nspinner=1
         while kill -0 "$pid" 2>/dev/null; do
             local elapsed_s=$(( SECONDS - start_s ))
             local elapsed_str="${elapsed_s}s"
-            (( elapsed_s >= 60 )) && elapsed_str="$(( elapsed_s / 60 ))m$(( elapsed_s % 60 ))s"
+            (( elapsed_s >= 60 )) && elapsed_str="$(( elapsed_s / 60 ))m$(( elapsed_s % 60 ))s" || true
 
             local step_ctx="${step_idx}/${total_steps}  ${elapsed_str}"
-            _status_line "$name" "${SPINNER_FRAMES[$idx]}" "$step_ctx"
+            _status_line "$name" "${SPINNER_FRAMES[$idx]:-|}" "$step_ctx"
             idx=$(( (idx + 1) % _nspinner ))
             sleep 0.12
         done
@@ -273,12 +283,13 @@ run_bg_with_spinner() {
     local start_s=$SECONDS
 
     local _nspinner=${#SPINNER_FRAMES[@]}
+    (( _nspinner < 1 )) && _nspinner=1
     while kill -0 "$pid" 2>/dev/null; do
         local elapsed_s=$(( SECONDS - start_s ))
         local elapsed_str="${elapsed_s}s"
-        (( elapsed_s >= 60 )) && elapsed_str="$(( elapsed_s / 60 ))m$(( elapsed_s % 60 ))s"
+        (( elapsed_s >= 60 )) && elapsed_str="$(( elapsed_s / 60 ))m$(( elapsed_s % 60 ))s" || true
 
-        _status_line "$name" "${SPINNER_FRAMES[$idx]}" "$elapsed_str"
+        _status_line "$name" "${SPINNER_FRAMES[$idx]:-|}" "$elapsed_str"
         idx=$(( (idx + 1) % _nspinner ))
         sleep 0.12
     done

@@ -359,22 +359,25 @@ _install_docker_engine() {
         print_result "docker" skip
         return 0
     fi
-    run_install "docker" "
-        sudo apt-get remove -y docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc 2>/dev/null || true
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq ca-certificates curl gnupg
-        sudo install -m 0755 -d /etc/apt/keyrings
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-        sudo chmod a+r /etc/apt/keyrings/docker.gpg
-        . /etc/os-release
-        ARCH=\$(dpkg --print-architecture)
-        CODENAME=\"\${UBUNTU_CODENAME:-\${VERSION_CODENAME}}\"
-        printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu %s stable\\n' \"\$ARCH\" \"\$CODENAME\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-        sudo systemctl enable docker --now 2>/dev/null || true
-        sudo usermod -aG docker \"\$(whoami)\" 2>/dev/null || true
-    " || true
+
+    # Step 4 command built with single-quotes so no escaping gymnastics are needed;
+    # variable expansions happen inside the child bash -lc shell, not here.
+    local _add_repo
+    _add_repo='. /etc/os-release
+ARCH=$(dpkg --print-architecture)
+CODENAME="${UBUNTU_CODENAME:-${VERSION_CODENAME}}"
+echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $CODENAME stable" \
+    | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update -qq'
+
+    run_steps "docker" done 6 \
+        "Remove conflicts"  'sudo apt-get remove -y docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc 2>/dev/null || true' \
+        "Prerequisites"     'sudo apt-get update -qq && sudo apt-get install -y -qq ca-certificates curl gnupg' \
+        "Add GPG key"       'sudo install -m 0755 -d /etc/apt/keyrings && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && sudo chmod a+r /etc/apt/keyrings/docker.gpg' \
+        "Add repository"    "$_add_repo" \
+        "Install packages"  'sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin' \
+        "Enable service"    'sudo systemctl enable docker --now 2>/dev/null || true; sudo usermod -aG docker "$(whoami)" 2>/dev/null || true' \
+    || true
 }
 
 _install_jwt_tool() {
