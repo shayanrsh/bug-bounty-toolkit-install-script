@@ -149,6 +149,10 @@ _run_cmd() {
     local use_stdbuf=0
     cmd_exists stdbuf && use_stdbuf=1
 
+    # Show a second line with the latest output so long commands don't look stuck
+    local show_tail=1
+    [[ "${BBSILENT_TAIL:-}" == "1" ]] && show_tail=0
+
     PROGRESS_ACTIVE=0
     PROGRESS_PARTIAL=0
 
@@ -165,6 +169,9 @@ _run_cmd() {
     local idx=0
     local start_s=$SECONDS
 
+    local last_tail_s=-1
+    local last_tail=""
+
     local _nspinner=${#SPINNER_FRAMES[@]}
     (( _nspinner < 1 )) && _nspinner=1
     while kill -0 "$pid" 2>/dev/null; do
@@ -173,12 +180,29 @@ _run_cmd() {
         (( elapsed_s >= 60 )) && elapsed_str="$(( elapsed_s / 60 ))m$(( elapsed_s % 60 ))s" || true
 
         _status_line "$name" "${SPINNER_FRAMES[$idx]:-|}" "$elapsed_str"
+
+        if (( show_tail == 1 )) && (( elapsed_s != last_tail_s )); then
+            last_tail_s=$elapsed_s
+            last_tail=$(tail -n 1 "$cmdout" 2>/dev/null || true)
+            last_tail=${last_tail//$'\r'/}
+            # Truncate to keep UI compact
+            last_tail=${last_tail:0:120}
+            printf "\n\033[2K  %b%s%b\033[1A" "$DIM" "$last_tail" "$RESET"
+        fi
+
         idx=$(( (idx + 1) % _nspinner ))
         sleep 0.12
     done
 
     local rc=0
     wait "$pid" || rc=$?
+
+    # Clear the 2-line status UI before printing the final result
+    if (( show_tail == 1 )); then
+        printf "\r\033[2K\n\033[2K\033[1A"
+    else
+        printf "\r\033[2K"
+    fi
 
     # Append command output to main log, then clean up
     cat "$cmdout" >> "$LOG_FILE" 2>/dev/null
@@ -202,6 +226,9 @@ run_steps() {
     local use_stdbuf=0
     cmd_exists stdbuf && use_stdbuf=1
 
+    local show_tail=1
+    [[ "${BBSILENT_TAIL:-}" == "1" ]] && show_tail=0
+
     log_debug "Running (steps): $name"
     : > "$cmdout"
 
@@ -210,6 +237,9 @@ run_steps() {
         local label="$1" cmd="$2"; shift 2
         local start_s=$SECONDS
         local idx=0
+
+        local last_tail_s=-1
+        local last_tail=""
 
         PROGRESS_ACTIVE=1
         PROGRESS_PARTIAL=$(( (step_idx - 1) * 1000 / total_steps ))
@@ -230,6 +260,15 @@ run_steps() {
 
             local step_ctx="${step_idx}/${total_steps}  ${elapsed_str}"
             _status_line "$name" "${SPINNER_FRAMES[$idx]:-|}" "$step_ctx"
+
+            if (( show_tail == 1 )) && (( elapsed_s != last_tail_s )); then
+                last_tail_s=$elapsed_s
+                last_tail=$(tail -n 1 "$cmdout" 2>/dev/null || true)
+                last_tail=${last_tail//$'\r'/}
+                last_tail=${last_tail:0:120}
+                printf "\n\033[2K  %b%s%b\033[1A" "$DIM" "$last_tail" "$RESET"
+            fi
+
             idx=$(( (idx + 1) % _nspinner ))
             sleep 0.12
         done
@@ -237,6 +276,11 @@ run_steps() {
         local rc=0
         wait "$pid" || rc=$?
         if (( rc != 0 )); then
+            if (( show_tail == 1 )); then
+                printf "\r\033[2K\n\033[2K\033[1A"
+            else
+                printf "\r\033[2K"
+            fi
             cat "$cmdout" >> "$LOG_FILE" 2>/dev/null
             rm -f "$cmdout"
             PROGRESS_ACTIVE=0
@@ -282,6 +326,9 @@ run_bg_with_spinner() {
     local idx=0
     local start_s=$SECONDS
 
+    local last_tail_s=-1
+    local last_tail=""
+
     local _nspinner=${#SPINNER_FRAMES[@]}
     (( _nspinner < 1 )) && _nspinner=1
     while kill -0 "$pid" 2>/dev/null; do
@@ -290,6 +337,15 @@ run_bg_with_spinner() {
         (( elapsed_s >= 60 )) && elapsed_str="$(( elapsed_s / 60 ))m$(( elapsed_s % 60 ))s" || true
 
         _status_line "$name" "${SPINNER_FRAMES[$idx]:-|}" "$elapsed_str"
+
+        if (( elapsed_s != last_tail_s )); then
+            last_tail_s=$elapsed_s
+            last_tail=$(tail -n 1 "$cmdout" 2>/dev/null || true)
+            last_tail=${last_tail//$'\r'/}
+            last_tail=${last_tail:0:120}
+            printf "\n\033[2K  %b%s%b\033[1A" "$DIM" "$last_tail" "$RESET"
+        fi
+
         idx=$(( (idx + 1) % _nspinner ))
         sleep 0.12
     done
@@ -300,7 +356,7 @@ run_bg_with_spinner() {
     cat "$cmdout" >> "$LOG_FILE" 2>/dev/null
     rm -f "$cmdout"
 
-    printf "\r\033[2K"   # clear status line without counting
+    printf "\r\033[2K\n\033[2K\033[1A"   # clear 2-line status without counting
     return "$rc"
 }
 

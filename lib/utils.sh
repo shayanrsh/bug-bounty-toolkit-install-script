@@ -199,18 +199,18 @@ ensure_apt_deps() {
     done
     if (( ${#missing[@]} > 0 )); then
         log_info "Installing prerequisites: ${missing[*]}"
-        sudo apt-get update -qq >> "$LOG_FILE" 2>&1
-        sudo apt-get install -y -qq "${missing[@]}" >> "$LOG_FILE" 2>&1
+        sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update -qq >> "$LOG_FILE" 2>&1
+        DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y "${missing[@]}" >> "$LOG_FILE" 2>&1
     fi
     # Ensure python3 + venv
     if ! cmd_exists python3; then
-        sudo apt-get install -y -qq python3 python3-pip python3-venv >> "$LOG_FILE" 2>&1
+        DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y python3 python3-pip python3-venv >> "$LOG_FILE" 2>&1
     fi
     if ! python3 -c "import venv" 2>/dev/null; then
-        sudo apt-get install -y -qq python3-venv >> "$LOG_FILE" 2>&1
+        DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y python3-venv >> "$LOG_FILE" 2>&1
     fi
     if ! cmd_exists pipx; then
-        sudo apt-get install -y -qq pipx >> "$LOG_FILE" 2>&1 || true
+        DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y pipx >> "$LOG_FILE" 2>&1 || true
         pipx ensurepath >> "$LOG_FILE" 2>&1 || true
         export PATH="$PATH:$HOME/.local/bin"
     fi
