@@ -152,6 +152,7 @@ _run_cmd() {
     # Show a second line with the latest output so long commands don't look stuck
     local show_tail=1
     [[ "${BBSILENT_TAIL:-}" == "1" ]] && show_tail=0
+    [[ ! -t 1 || "${TERM:-dumb}" == "dumb" ]] && show_tail=0
 
     PROGRESS_ACTIVE=0
     PROGRESS_PARTIAL=0
@@ -228,6 +229,7 @@ run_steps() {
 
     local show_tail=1
     [[ "${BBSILENT_TAIL:-}" == "1" ]] && show_tail=0
+    [[ ! -t 1 || "${TERM:-dumb}" == "dumb" ]] && show_tail=0
 
     log_debug "Running (steps): $name"
     : > "$cmdout"
@@ -329,6 +331,10 @@ run_bg_with_spinner() {
     local last_tail_s=-1
     local last_tail=""
 
+    local show_tail=1
+    [[ "${BBSILENT_TAIL:-}" == "1" ]] && show_tail=0
+    [[ ! -t 1 || "${TERM:-dumb}" == "dumb" ]] && show_tail=0
+
     local _nspinner=${#SPINNER_FRAMES[@]}
     (( _nspinner < 1 )) && _nspinner=1
     while kill -0 "$pid" 2>/dev/null; do
@@ -338,7 +344,7 @@ run_bg_with_spinner() {
 
         _status_line "$name" "${SPINNER_FRAMES[$idx]:-|}" "$elapsed_str"
 
-        if (( elapsed_s != last_tail_s )); then
+        if (( show_tail == 1 )) && (( elapsed_s != last_tail_s )); then
             last_tail_s=$elapsed_s
             last_tail=$(tail -n 1 "$cmdout" 2>/dev/null || true)
             last_tail=${last_tail//$'\r'/}
@@ -356,7 +362,11 @@ run_bg_with_spinner() {
     cat "$cmdout" >> "$LOG_FILE" 2>/dev/null
     rm -f "$cmdout"
 
-    printf "\r\033[2K\n\033[2K\033[1A"   # clear 2-line status without counting
+    if (( show_tail == 1 )); then
+        printf "\r\033[2K\n\033[2K\033[1A"   # clear 2-line status without counting
+    else
+        printf "\r\033[2K"
+    fi
     return "$rc"
 }
 

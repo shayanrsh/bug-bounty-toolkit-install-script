@@ -836,7 +836,7 @@ uninstall_docker_category() {
     fi
 
     if cmd_exists docker; then
-        run_action "docker" removed "sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>/dev/null || true && sudo rm -rf /var/lib/docker /var/lib/containerd && sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/sources.list.d/docker.sources /etc/apt/keyrings/docker.gpg /etc/apt/keyrings/docker.asc" || true
+        run_action "docker" removed "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>/dev/null || true && sudo rm -rf /var/lib/docker /var/lib/containerd && sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/sources.list.d/docker.sources /etc/apt/keyrings/docker.gpg /etc/apt/keyrings/docker.asc" || true
     else
         print_result "docker" skip
     fi
@@ -850,7 +850,7 @@ uninstall_apt_snap_category() {
     local tool
     for tool in "${APT_TOOLS[@]}"; do
         if is_apt_installed "$tool"; then
-            run_action "$tool" removed "sudo apt-get purge -y -qq $tool" || true
+            run_action "$tool" removed "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 purge -y $tool" || true
         else
             print_result "$tool" skip
         fi
@@ -907,7 +907,7 @@ uninstall_zsh_category() {
         print_result "oh-my-zsh" skip
     fi
     if cmd_exists zsh && is_apt_installed zsh; then
-        run_action "zsh" removed "sudo chsh -s /bin/bash \$(whoami) 2>/dev/null; sudo apt-get purge -y -qq zsh fonts-font-awesome" || true
+        run_action "zsh" removed "sudo chsh -s /bin/bash \$(whoami) 2>/dev/null; DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 purge -y zsh fonts-font-awesome" || true
     else
         print_result "zsh" skip
     fi
@@ -945,12 +945,12 @@ _install_single_tool() {
             if is_apt_installed "$name"; then
                 print_result "$name" skip
             else
-                run_install "$name" "sudo apt-get install -y -qq $name" || true
+                run_install "$name" "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y $name" || true
             fi
             ;;
         snap)
             if ! cmd_exists snap; then
-                sudo apt-get install -y -qq snapd >> "$LOG_FILE" 2>&1
+                DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y snapd >> "$LOG_FILE" 2>&1
             fi
             if is_snap_installed "$name"; then
                 print_result "$name" skip
@@ -963,7 +963,7 @@ _install_single_tool() {
             if [[ -d "$WORDLISTS_DIR/SecLists-master" ]]; then
                 print_result "SecLists" skip
             else
-                cmd_exists unzip || sudo apt-get install -y -qq unzip >> "$LOG_FILE" 2>&1
+                cmd_exists unzip || DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y unzip >> "$LOG_FILE" 2>&1
                 run_install "SecLists" "
                     cd '$WORDLISTS_DIR' && \\
                     wget -c https://github.com/danielmiessler/SecLists/archive/master.zip -O SecList.zip && \\
@@ -1587,10 +1587,10 @@ update_tools() {
         run_action "x8" updated "cargo install x8" || true
     fi
     # APT upgrade
-    sudo apt-get update -qq >> "$LOG_FILE" 2>&1 || true
+    sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update -qq >> "$LOG_FILE" 2>&1 || true
     for tool in "${APT_TOOLS[@]}"; do
         if is_apt_installed "$tool"; then
-            run_action "$tool" updated "sudo apt-get install -y -qq --only-upgrade $tool" || true
+            run_action "$tool" updated "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y --only-upgrade $tool" || true
         fi
     done
     # Snap refresh
@@ -1631,7 +1631,7 @@ update_wordlists() {
     section_header "Updating Wordlists" "$count"
 
     if [[ -d "$WORDLISTS_DIR/SecLists-master" ]]; then
-        cmd_exists unzip || sudo apt-get install -y -qq unzip
+        cmd_exists unzip || DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y unzip
         run_action "SecLists" updated "
             cd '$WORDLISTS_DIR' && rm -rf SecLists-master && \
             wget -c https://github.com/danielmiessler/SecLists/archive/master.zip -O SecList.zip && \
