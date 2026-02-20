@@ -57,8 +57,8 @@ progress_init() {
     PROGRESS_FAIL=0
 }
 
-# Precompute bar strings once (width=20) to avoid loops in the hot path
-_BAR_W=20
+# Precompute bar strings once (width=15) to avoid loops in the hot path
+_BAR_W=15
 declare -a _BARS_FILL _BARS_EMPTY
 _precompute_bars() {
     local i fill="" empty=""
@@ -73,59 +73,11 @@ _precompute_bars() {
 }
 _precompute_bars
 
-# Precompute bouncing bar frames for per-tool activity indication
-_BOUNCE_W=8
-_BOUNCE_SEG=3
-_BOUNCE_NFRAMES=0
-declare -a _BOUNCE_FRAMES
-_precompute_bounce() {
-    local max_pos=$(( _BOUNCE_W - _BOUNCE_SEG ))
-    local total=$(( max_pos * 2 ))
-    (( total == 0 )) && total=1
-    local f pos i bar
-    for (( f = 0; f < total; f++ )); do
-        pos=$f
-        (( pos > max_pos )) && pos=$(( total - pos ))
-        bar=""
-        for (( i = 0; i < _BOUNCE_W; i++ )); do
-            if (( i >= pos && i < pos + _BOUNCE_SEG )); then
-                bar+="${BAR_FILL}"
-            else
-                bar+="${BAR_EMPTY}"
-            fi
-        done
-        _BOUNCE_FRAMES+=("$bar")
-    done
-    _BOUNCE_NFRAMES=${#_BOUNCE_FRAMES[@]}
-}
-_precompute_bounce
-
-# Precompute per-tool progress bars (width=_BOUNCE_W, 0..100)
-declare -a _TOOL_BARS
-_precompute_tool_bars() {
-    local p filled i bar
-    for (( p = 0; p <= 100; p++ )); do
-        filled=$(( p * _BOUNCE_W / 100 ))
-        bar=""
-        for (( i = 0; i < _BOUNCE_W; i++ )); do
-            if (( i < filled )); then
-                bar+="${BAR_FILL}"
-            else
-                bar+="${BAR_EMPTY}"
-            fi
-        done
-        _TOOL_BARS[$p]="$bar"
-    done
-}
-_precompute_tool_bars
-
-# ── Status line (bouncing bar + progress bar + live output on two lines) ─────
-# All arithmetic is inlined — zero subshells in the hot path.
-
-COLS=$(tput cols 2>/dev/null || echo 80)
+# ── Status line — single compact line, zero subshells ────────────────────────
+# Format:  spinner  name  [bar]  pct%  done/total  [elapsed]
 
 _status_line() {
-    local name="$1" frame="$2" detail="${3:-}"
+    local name="$1" frame="$2" elapsed="${3:-}"
     local done=$(( PROGRESS_DONE + PROGRESS_SKIP + PROGRESS_FAIL ))
     local done_milli=$(( done * 1000 ))
     if (( PROGRESS_ACTIVE == 1 )); then
@@ -140,11 +92,12 @@ _status_line() {
     (( filled > _BAR_W )) && filled=$_BAR_W
     local bar="${_BARS_FILL[$filled]}${_BARS_EMPTY[$filled]}"
 
-    printf "\r\033[2K  [${CYAN}%s${RESET}] %-18s ${DIM}│${RESET} [${GREEN}%s${RESET}] %3d%% (%d/%d)" \
-        "$frame" "$name" "$bar" "$pct" "$done" "$PROGRESS_TOTAL"
-
-    if [[ -n "$detail" ]]; then
-        printf "\n\033[2K  ${DIM}    └─ %.${COLS}s${RESET}\033[A" "$detail"
+    if [[ -n "$elapsed" ]]; then
+        printf "\r\033[2K  ${CYAN}%s${RESET}  %-22s  ${GREEN}%s${RESET}  %3d%%  %d/%d  ${DIM}%s${RESET}" \
+            "$frame" "$name" "$bar" "$pct" "$done" "$PROGRESS_TOTAL" "$elapsed"
+    else
+        printf "\r\033[2K  ${CYAN}%s${RESET}  %-22s  ${GREEN}%s${RESET}  %3d%%  %d/%d" \
+            "$frame" "$name" "$bar" "$pct" "$done" "$PROGRESS_TOTAL"
     fi
 }
 
@@ -152,7 +105,7 @@ _status_line() {
 
 print_result() {
     local name="$1" status="$2"
-    printf "\r\033[2K\n\033[2K\033[A"
+    printf "\r\033[2K"
     case "$status" in
         done)
             printf "  ${GREEN}[${SYM_OK}]${RESET}  %-26s ${GREEN}installed${RESET}\n" "$name"
@@ -204,27 +157,14 @@ _run_cmd() {
     local idx=0
     local start_s=$SECONDS
 
+    local _nspinner=${#SPINNER_FRAMES[@]}
     while kill -0 "$pid" 2>/dev/null; do
-        local last_line=""
-        if [[ -s "$cmdout" ]]; then
-            last_line=$(tail -1 "$cmdout" 2>/dev/null) || true
-            last_line="${last_line#"${last_line%%[![:space:]]*}"}"  # trim leading whitespace
-            last_line="${last_line//$'\r'/}"                       # strip \r
-        fi
-
         local elapsed_s=$(( SECONDS - start_s ))
         local elapsed_str="${elapsed_s}s"
         (( elapsed_s >= 60 )) && elapsed_str="$(( elapsed_s / 60 ))m$(( elapsed_s % 60 ))s"
 
-        local detail
-        if [[ -n "$last_line" ]]; then
-            detail="${last_line}  │  ${elapsed_str}"
-        else
-            detail="working…  │  ${elapsed_str}"
-        fi
-
-        _status_line "$name" "${_BOUNCE_FRAMES[$idx]}" "$detail"
-        idx=$(( (idx + 1) % _BOUNCE_NFRAMES ))
+        _status_line "$name" "${SPINNER_FRAMES[$idx]}" "$elapsed_str"
+        idx=$(( (idx + 1) % _nspinner ))
         sleep 0.12
     done
 
@@ -272,27 +212,15 @@ run_steps() {
         fi
         local pid=$!
 
+        local _nspinner=${#SPINNER_FRAMES[@]}
         while kill -0 "$pid" 2>/dev/null; do
-            local last_line=""
-            if [[ -s "$cmdout" ]]; then
-                last_line=$(tail -1 "$cmdout" 2>/dev/null) || true
-                last_line="${last_line#"${last_line%%[![:space:]]*}"}"
-                last_line="${last_line//$'\r'/}"
-            fi
-
             local elapsed_s=$(( SECONDS - start_s ))
             local elapsed_str="${elapsed_s}s"
             (( elapsed_s >= 60 )) && elapsed_str="$(( elapsed_s / 60 ))m$(( elapsed_s % 60 ))s"
 
-            local tool_pct=$(( (step_idx - 1) * 100 / total_steps ))
-            local detail="step ${step_idx}/${total_steps} (${tool_pct}%) - ${label}"
-            if [[ -n "$last_line" ]]; then
-                detail="${detail} - ${last_line}"
-            fi
-            detail="${detail}  |  ${elapsed_str}"
-
-            _status_line "$name" "${_TOOL_BARS[$tool_pct]}" "$detail"
-            idx=$(( (idx + 1) % _BOUNCE_NFRAMES ))
+            local step_ctx="${step_idx}/${total_steps}  ${elapsed_str}"
+            _status_line "$name" "${SPINNER_FRAMES[$idx]}" "$step_ctx"
+            idx=$(( (idx + 1) % _nspinner ))
             sleep 0.12
         done
 
@@ -344,21 +272,14 @@ run_bg_with_spinner() {
     local idx=0
     local start_s=$SECONDS
 
+    local _nspinner=${#SPINNER_FRAMES[@]}
     while kill -0 "$pid" 2>/dev/null; do
-        local last_line=""
-        if [[ -s "$cmdout" ]]; then
-            last_line=$(tail -1 "$cmdout" 2>/dev/null) || true
-            last_line="${last_line#"${last_line%%[![:space:]]*}"}"
-            last_line="${last_line//$'\r'/}"
-        fi
-
         local elapsed_s=$(( SECONDS - start_s ))
         local elapsed_str="${elapsed_s}s"
         (( elapsed_s >= 60 )) && elapsed_str="$(( elapsed_s / 60 ))m$(( elapsed_s % 60 ))s"
 
-        local detail="${last_line:-working…}  │  ${elapsed_str}"
-        _status_line "$name" "${_BOUNCE_FRAMES[$idx]}" "$detail"
-        idx=$(( (idx + 1) % _BOUNCE_NFRAMES ))
+        _status_line "$name" "${SPINNER_FRAMES[$idx]}" "$elapsed_str"
+        idx=$(( (idx + 1) % _nspinner ))
         sleep 0.12
     done
 
@@ -368,7 +289,7 @@ run_bg_with_spinner() {
     cat "$cmdout" >> "$LOG_FILE" 2>/dev/null
     rm -f "$cmdout"
 
-    printf "\r\033[2K\n\033[2K\033[A"   # clear status line without counting
+    printf "\r\033[2K"   # clear status line without counting
     return "$rc"
 }
 

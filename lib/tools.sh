@@ -362,21 +362,18 @@ _install_docker_engine() {
     run_install "docker" "
         sudo apt-get remove -y docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc 2>/dev/null || true
         sudo apt-get update -qq
-        sudo apt-get install -y -qq ca-certificates curl
+        sudo apt-get install -y -qq ca-certificates curl gnupg
         sudo install -m 0755 -d /etc/apt/keyrings
-        sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-        sudo chmod a+r /etc/apt/keyrings/docker.asc
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        sudo chmod a+r /etc/apt/keyrings/docker.gpg
         . /etc/os-release
-        sudo tee /etc/apt/sources.list.d/docker.sources <<DEOF
-Types: deb
-URIs: https://download.docker.com/linux/ubuntu
-Suites: \${UBUNTU_CODENAME:-\$VERSION_CODENAME}
-Components: stable
-Signed-By: /etc/apt/keyrings/docker.asc
-DEOF
+        ARCH=\$(dpkg --print-architecture)
+        CODENAME=\"\${UBUNTU_CODENAME:-\${VERSION_CODENAME}}\"
+        printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu %s stable\\n' \"\$ARCH\" \"\$CODENAME\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
         sudo apt-get update -qq
         sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
         sudo systemctl enable docker --now 2>/dev/null || true
+        sudo usermod -aG docker \"\$(whoami)\" 2>/dev/null || true
     " || true
 }
 
@@ -401,6 +398,7 @@ _install_jwt_tool() {
 
 install_docker_category() {
     section_header "Docker" "$(count_docker)"
+    sudo -v 2>/dev/null || true
     _install_docker_engine
     _install_jwt_tool
     section_footer "Docker"
@@ -964,7 +962,7 @@ uninstall_all() {
         run_action "docker" removed "
             sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>/dev/null || true && \
             sudo rm -rf /var/lib/docker /var/lib/containerd && \
-            sudo rm -f /etc/apt/sources.list.d/docker.sources /etc/apt/keyrings/docker.asc
+            sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/sources.list.d/docker.sources /etc/apt/keyrings/docker.gpg /etc/apt/keyrings/docker.asc
         " || true
     else
         print_result "docker" skip
@@ -1076,7 +1074,7 @@ _uninstall_single_tool() {
                 run_action "docker" removed "
                     sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>/dev/null || true && \
                     sudo rm -rf /var/lib/docker /var/lib/containerd && \
-                    sudo rm -f /etc/apt/sources.list.d/docker.sources /etc/apt/keyrings/docker.asc
+                    sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/sources.list.d/docker.sources /etc/apt/keyrings/docker.gpg /etc/apt/keyrings/docker.asc
                 " || true
             else print_result "docker" skip; fi
             ;;
