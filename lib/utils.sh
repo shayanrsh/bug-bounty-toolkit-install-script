@@ -154,6 +154,28 @@ remove_from_rc_file() {
     fi
 }
 
+_known_rc_files() {
+    # Keep deterministic ordering
+    echo "${HOME}/.bashrc"
+    echo "${HOME}/.zshrc"
+}
+
+add_to_all_rc() {
+    local line="$1"
+    local rc
+    while IFS= read -r rc; do
+        add_to_rc_file "$rc" "$line"
+    done < <(_known_rc_files)
+}
+
+remove_from_all_rc() {
+    local pattern="$1"
+    local rc
+    while IFS= read -r rc; do
+        remove_from_rc_file "$rc" "$pattern"
+    done < <(_known_rc_files)
+}
+
 add_to_rc() {
     local line="$1"
     local rc_file

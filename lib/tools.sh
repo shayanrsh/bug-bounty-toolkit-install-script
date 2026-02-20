@@ -194,6 +194,7 @@ install_rust_and_x8() {
         [[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
         add_to_rc '. "$HOME/.cargo/env"'
         export PATH="$PATH:$HOME/.cargo/bin"
+        : > "$HOME/.bbtk_rustup_installed"
     fi
 
     # Build deps for x8
@@ -704,26 +705,209 @@ install_custom() {
 }
 
 _install_custom_by_category() {
-    printf "\n  ${BOLD}Select categories to install:${RESET}\n\n"
-    local total=0
+    show_category_picker "Custom Select — Install by Category" || { log_warn "Nothing selected."; return 0; }
 
-    local do_py=0 do_go=0 do_docker=0 do_apt=0 do_wl=0 do_zsh=0
-    if confirm "  Python tools? ($(count_python) tools)";   then do_py=1;     (( total += $(count_python) ));    fi
-    if confirm "  Go + Rust tools? ($(count_go) tools)";    then do_go=1;     (( total += $(count_go) ));        fi
-    if confirm "  Docker + tools? ($(count_docker) tools)"; then do_docker=1; (( total += $(count_docker) ));    fi
-    if confirm "  APT/Snap tools? ($(count_apt) tools)";    then do_apt=1;    (( total += $(count_apt) ));       fi
-    if confirm "  Wordlists & Payloads? ($(count_wordlists) items)"; then do_wl=1; (( total += $(count_wordlists) )); fi
-    if confirm "  Zsh + Oh My Zsh? ($(count_zsh) items)"; then do_zsh=1; (( total += $(count_zsh) )); fi
+    local total=0 key
+    for key in "${SELECTED_CATEGORY_KEYS[@]}"; do
+        case "$key" in
+            python)    (( total += $(count_python) )) ;;
+            go)        (( total += $(count_go) )) ;;
+            docker)    (( total += $(count_docker) )) ;;
+            apt)       (( total += $(count_apt) )) ;;
+            wordlists) (( total += $(count_wordlists) )) ;;
+            zsh)       (( total += $(count_zsh) )) ;;
+        esac
+    done
 
-    if (( total == 0 )); then log_warn "Nothing selected."; return 0; fi
+    (( total == 0 )) && { log_warn "Nothing selected."; return 0; }
+
+    printf "\n  ${BOLD}Selected categories:${RESET} ${DIM}%s${RESET}\n\n" "${SELECTED_CATEGORY_KEYS[*]}"
+    confirm "Install ${total} items?" || { log_info "Aborted."; return 0; }
+
     progress_init "$total"
 
-    (( do_py ))     && install_python_tools_category
-    (( do_go ))     && install_go_tools_category
-    (( do_docker )) && install_docker_category
-    (( do_apt ))    && install_apt_snap_category
-    (( do_wl ))     && install_wordlists_category
-    (( do_zsh ))    && install_zsh_category
+    for key in "${SELECTED_CATEGORY_KEYS[@]}"; do
+        case "$key" in
+            python)    install_python_tools_category ;;
+            go)        install_go_tools_category ;;
+            docker)    install_docker_category ;;
+            apt)       install_apt_snap_category ;;
+            wordlists) install_wordlists_category ;;
+            zsh)       install_zsh_category ;;
+        esac
+    done
+}
+
+# ═════════════════════════════════════════════════════════════════════
+#  UNINSTALL — CATEGORY ROUTINES (shared)
+# ═════════════════════════════════════════════════════════════════════
+
+_bbtk_marker_rust="$HOME/.bbtk_rustup_installed"
+
+uninstall_python_category() {
+    section_header "Uninstalling Python Tools" "$(count_python)"
+
+    local tool
+    for tool in "${PYTHON_PIP_TOOLS[@]}"; do
+        if [[ -d "$TOOLS_DIR/$tool" ]] || [[ -L "$HOME/.local/bin/$tool" ]]; then
+            run_action "$tool" removed "rm -rf '${TOOLS_DIR}/${tool}'; rm -f '$HOME/.local/bin/$tool'" || true
+        else
+            print_result "$tool" skip
+        fi
+    done
+    for tool in "${PYTHON_PIPX_TOOLS[@]}"; do
+        if cmd_exists "$tool"; then
+            run_action "$tool" removed "pipx uninstall $tool" || true
+        else
+            print_result "$tool" skip
+        fi
+    done
+    for tool in "${!PYTHON_GIT_TOOLS[@]}"; do
+        if [[ -d "$TOOLS_DIR/$tool" ]] || [[ -L "$HOME/.local/bin/$tool" ]]; then
+            if [[ "$tool" == "SSTImap" ]]; then
+                run_action "$tool" removed "rm -rf '${TOOLS_DIR}/${tool}'; rm -f '$HOME/.local/bin/$tool' '$HOME/.local/bin/sstimap'" || true
+            else
+                run_action "$tool" removed "rm -rf '${TOOLS_DIR}/${tool}'; rm -f '$HOME/.local/bin/$tool'" || true
+            fi
+        else
+            print_result "$tool" skip
+        fi
+    done
+
+    section_footer "Python Tools"
+}
+
+uninstall_go_rust_category() {
+    section_header "Uninstalling Go + Rust Tools" "$(count_go)"
+
+    local gopath
+    gopath=$(go env GOPATH 2>/dev/null || echo "$HOME/go")
+    local tool
+    for tool in "${GO_TOOLS_ORDER[@]}"; do
+        if [[ -f "$gopath/bin/$tool" ]]; then
+            run_action "$tool" removed "rm -f '${gopath}/bin/${tool}'" || true
+        else
+            print_result "$tool" skip
+        fi
+    done
+
+    if cmd_exists x8; then
+        run_action "x8" removed "cargo uninstall x8" || true
+    else
+        print_result "x8" skip
+    fi
+
+    # Go itself
+    if is_snap_installed go; then
+        run_action "go (language)" removed "sudo snap remove go" || true
+        remove_from_all_rc "# Go environment (toolkit)"
+        remove_from_all_rc '/snap/bin'
+        remove_from_all_rc '/usr/local/go/bin'
+        remove_from_all_rc 'go env GOPATH'
+    else
+        print_result "go (language)" skip
+    fi
+
+    # Rust (only if toolkit installed it)
+    if [[ -f "$_bbtk_marker_rust" ]]; then
+        run_action "rust (language)" removed "if [[ -x '$HOME/.cargo/bin/rustup' ]]; then '$HOME/.cargo/bin/rustup' self uninstall -y; fi; rm -rf '$HOME/.cargo' '$HOME/.rustup'" || true
+        rm -f "$_bbtk_marker_rust" 2>/dev/null || true
+        remove_from_all_rc '\. "\$HOME/\.cargo/env"'
+    else
+        print_result "rust (language)" skip
+    fi
+
+    section_footer "Go + Rust Tools"
+}
+
+uninstall_docker_category() {
+    section_header "Uninstalling Docker" "$(count_docker)"
+
+    # jwt_tool alias cleanup from both shells
+    if grep -qF "jwt_tool" "$HOME/.bashrc" 2>/dev/null || grep -qF "jwt_tool" "$HOME/.zshrc" 2>/dev/null; then
+        run_action "jwt_tool (alias)" removed "remove_from_all_rc 'jwt_tool'; docker rmi ticarpi/jwt_tool 2>/dev/null || true; rm -rf '$HOME/.jwt_tool'" || true
+    else
+        print_result "jwt_tool (alias)" skip
+    fi
+
+    if cmd_exists docker; then
+        run_action "docker" removed "sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>/dev/null || true && sudo rm -rf /var/lib/docker /var/lib/containerd && sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/sources.list.d/docker.sources /etc/apt/keyrings/docker.gpg /etc/apt/keyrings/docker.asc" || true
+    else
+        print_result "docker" skip
+    fi
+
+    section_footer "Docker"
+}
+
+uninstall_apt_snap_category() {
+    section_header "Uninstalling APT / Snap Tools" "$(count_apt)"
+
+    local tool
+    for tool in "${APT_TOOLS[@]}"; do
+        if is_apt_installed "$tool"; then
+            run_action "$tool" removed "sudo apt-get purge -y -qq $tool" || true
+        else
+            print_result "$tool" skip
+        fi
+    done
+    for tool in "${SNAP_TOOLS[@]}"; do
+        if is_snap_installed "$tool"; then
+            run_action "$tool" removed "sudo snap remove $tool" || true
+        else
+            print_result "$tool" skip
+        fi
+    done
+
+    section_footer "APT / Snap Tools"
+}
+
+uninstall_wordlists_category() {
+    section_header "Removing Wordlists & Payloads" "$(count_wordlists)"
+
+    if [[ -d "$WORDLISTS_DIR" ]]; then
+        run_action "~/wordlists" removed "rm -rf '$WORDLISTS_DIR'" || true
+        local wl_remain=$(( $(count_wordlists) - 1 ))
+        (( PROGRESS_DONE += wl_remain )) || true
+    else
+        print_result "~/wordlists" skip
+        local wl_remain=$(( $(count_wordlists) - 1 ))
+        (( PROGRESS_SKIP += wl_remain )) || true
+    fi
+
+    section_footer "Wordlists & Payloads"
+}
+
+uninstall_zsh_category() {
+    section_header "Uninstalling Zsh + Oh My Zsh" "$(count_zsh)"
+
+    local zsh_custom="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
+    if [[ -d "${zsh_custom}/themes/powerlevel10k" ]]; then
+        run_action "powerlevel10k" removed "rm -rf '${zsh_custom}/themes/powerlevel10k'; rm -f '$HOME/.p10k.zsh'" || true
+    else
+        print_result "powerlevel10k" skip
+    fi
+    if [[ -d "${zsh_custom}/plugins/zsh-syntax-highlighting" ]]; then
+        run_action "zsh-syntax-highlighting" removed "rm -rf '${zsh_custom}/plugins/zsh-syntax-highlighting'" || true
+    else
+        print_result "zsh-syntax-highlighting" skip
+    fi
+    if [[ -d "${zsh_custom}/plugins/zsh-autosuggestions" ]]; then
+        run_action "zsh-autosuggestions" removed "rm -rf '${zsh_custom}/plugins/zsh-autosuggestions'" || true
+    else
+        print_result "zsh-autosuggestions" skip
+    fi
+    if [[ -d "$HOME/.oh-my-zsh" ]]; then
+        run_action "oh-my-zsh" removed "rm -rf '$HOME/.oh-my-zsh'; rm -f '$HOME/.zshrc'" || true
+    else
+        print_result "oh-my-zsh" skip
+    fi
+    if cmd_exists zsh && is_apt_installed zsh; then
+        run_action "zsh" removed "sudo chsh -s /bin/bash \$(whoami) 2>/dev/null; sudo apt-get purge -y -qq zsh fonts-font-awesome" || true
+    else
+        print_result "zsh" skip
+    fi
+
+    section_footer "Zsh + Oh My Zsh"
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1257,44 +1441,37 @@ uninstall_selected_tools() {
 }
 
 _uninstall_by_category() {
-    printf "\n  ${BOLD}Select categories to uninstall:${RESET}\n\n"
-    local total=0
+    show_category_picker "Selective Uninstall — Remove by Category" || { log_warn "Nothing selected."; return 0; }
 
-    local do_py=0 do_go=0 do_docker=0 do_apt=0 do_wl=0 do_zsh=0
-    if confirm "  Python tools? ($(count_python) tools)";   then do_py=1;     (( total += _CNT_PYTHON ));    fi
-    if confirm "  Go + Rust tools? ($(count_go) tools)";    then do_go=1;     (( total += _CNT_GO ));        fi
-    if confirm "  Docker + tools? ($(count_docker) tools)"; then do_docker=1; (( total += _CNT_DOCKER ));    fi
-    if confirm "  APT/Snap tools? ($(count_apt) tools)";    then do_apt=1;    (( total += _CNT_APT ));       fi
-    if confirm "  Wordlists & Payloads? ($(count_wordlists) items)"; then do_wl=1; (( total += _CNT_WORDLISTS )); fi
-    if confirm "  Zsh + Oh My Zsh? ($(count_zsh) items)"; then do_zsh=1; (( total += _CNT_ZSH )); fi
-
-    if (( total == 0 )); then log_warn "Nothing selected."; return 0; fi
-    progress_init "$total"
-
-    # Build list of matching registry indices and uninstall
-    local i
-    for (( i = 0; i < _REG_COUNT; i++ )); do
-        case "${_REG_CAT[$i]}" in
-            py-pip|py-pipx|py-git) (( do_py ))     && _uninstall_single_tool "$i" ;;
-            go|rust)               (( do_go ))      && _uninstall_single_tool "$i" ;;
-            docker|docker-tool)    (( do_docker ))  && _uninstall_single_tool "$i" ;;
-            apt|snap)              (( do_apt ))     && _uninstall_single_tool "$i" ;;
-            wl-seclists|wl-assetnote|wl-git|payload) (( do_wl )) && _uninstall_single_tool "$i" ;;
-            zsh-apt|zsh-omz|zsh-plugin|zsh-theme) (( do_zsh )) && _uninstall_single_tool "$i" ;;
+    local total=0 key
+    for key in "${SELECTED_CATEGORY_KEYS[@]}"; do
+        case "$key" in
+            python)    (( total += $(count_python) )) ;;
+            go)        (( total += $(count_go) )) ;;
+            docker)    (( total += $(count_docker) )) ;;
+            apt)       (( total += $(count_apt) )) ;;
+            wordlists) (( total += $(count_wordlists) )) ;;
+            zsh)       (( total += $(count_zsh) )) ;;
         esac
     done
 
-    # Handle Go language itself if Go category selected
-    if (( do_go )); then
-        if is_snap_installed go; then
-            run_action "go (language)" removed "sudo snap remove go" || true
-            remove_from_rc "# Go environment (toolkit)"
-            remove_from_rc '/usr/local/go/bin'
-            remove_from_rc 'go env GOPATH'
-        else
-            print_result "go (language)" skip
-        fi
-    fi
+    (( total == 0 )) && { log_warn "Nothing selected."; return 0; }
+
+    printf "\n  ${RED}${BOLD}Selected categories to remove:${RESET} ${DIM}%s${RESET}\n\n" "${SELECTED_CATEGORY_KEYS[*]}"
+    confirm "Remove ${total} items?" || { log_info "Aborted."; return 0; }
+
+    progress_init "$total"
+
+    for key in "${SELECTED_CATEGORY_KEYS[@]}"; do
+        case "$key" in
+            python)    uninstall_python_category ;;
+            go)        uninstall_go_rust_category ;;
+            docker)    uninstall_docker_category ;;
+            apt)       uninstall_apt_snap_category ;;
+            wordlists) uninstall_wordlists_category ;;
+            zsh)       uninstall_zsh_category ;;
+        esac
+    done
 
     sudo apt-get autoremove -y -qq >> "$LOG_FILE" 2>&1 || true
 }

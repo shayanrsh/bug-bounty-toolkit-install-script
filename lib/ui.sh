@@ -385,6 +385,84 @@ show_custom_mode() {
     done
 }
 
+# ── Category picker (shared by install/uninstall) ───────────────────────────
+
+SELECTED_CATEGORY_KEYS=()
+
+_parse_index_list() {
+    # Populates PARSED_INDICES with 1-based indices in range [1..max]
+    local max="$1" input="$2"
+    PARSED_INDICES=()
+
+    input="${input// /}"
+    [[ -z "$input" ]] && return 1
+
+    if [[ "$input" == "all" ]]; then
+        local i
+        for (( i = 1; i <= max; i++ )); do
+            PARSED_INDICES+=("$i")
+        done
+        return 0
+    fi
+
+    local IFS=',' token
+    for token in $input; do
+        if [[ "$token" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+            local start="${BASH_REMATCH[1]}" end="${BASH_REMATCH[2]}" i
+            (( start > end )) && { local tmp="$start"; start="$end"; end="$tmp"; }
+            for (( i = start; i <= end; i++ )); do
+                (( i >= 1 && i <= max )) && PARSED_INDICES+=("$i")
+            done
+        elif [[ "$token" =~ ^[0-9]+$ ]]; then
+            local i="$token"
+            (( i >= 1 && i <= max )) && PARSED_INDICES+=("$i")
+        fi
+    done
+
+    (( ${#PARSED_INDICES[@]} > 0 ))
+}
+
+show_category_picker() {
+    local title="$1"
+    SELECTED_CATEGORY_KEYS=()
+
+    printf "\n  ${BOLD}%s${RESET}\n" "$title"
+    printf "  ${DIM}Enter numbers separated by commas or ranges (e.g. 1,3-5). Type ${RESET}all${DIM} for all categories.${RESET}\n\n"
+
+    printf "    ${CYAN}1${RESET})  Python Tools           ${DIM}— %s items${RESET}\n" "$(count_python)"
+    printf "    ${CYAN}2${RESET})  Go + Rust Tools        ${DIM}— %s items${RESET}\n" "$(count_go)"
+    printf "    ${CYAN}3${RESET})  Docker + Tools         ${DIM}— %s items${RESET}\n" "$(count_docker)"
+    printf "    ${CYAN}4${RESET})  APT / Snap Tools       ${DIM}— %s items${RESET}\n" "$(count_apt)"
+    printf "    ${CYAN}5${RESET})  Wordlists & Payloads   ${DIM}— %s items${RESET}\n" "$(count_wordlists)"
+    printf "    ${CYAN}6${RESET})  Zsh + Oh My Zsh        ${DIM}— %s items${RESET}\n" "$(count_zsh)"
+    printf "\n"
+
+    local input
+    read -rp "  Categories: " input
+    [[ -z "$input" ]] && return 1
+
+    local -a PARSED_INDICES=()
+    _parse_index_list 6 "$input" || return 1
+
+    # Deduplicate + map
+    local -A seen=()
+    local idx
+    for idx in "${PARSED_INDICES[@]}"; do
+        [[ -n "${seen[$idx]:-}" ]] && continue
+        seen[$idx]=1
+        case "$idx" in
+            1) SELECTED_CATEGORY_KEYS+=(python) ;;
+            2) SELECTED_CATEGORY_KEYS+=(go) ;;
+            3) SELECTED_CATEGORY_KEYS+=(docker) ;;
+            4) SELECTED_CATEGORY_KEYS+=(apt) ;;
+            5) SELECTED_CATEGORY_KEYS+=(wordlists) ;;
+            6) SELECTED_CATEGORY_KEYS+=(zsh) ;;
+        esac
+    done
+
+    (( ${#SELECTED_CATEGORY_KEYS[@]} > 0 ))
+}
+
 # ── Individual tool picker (multi-select with comma/range input) ───────────
 
 SELECTED_TOOL_INDICES=()
