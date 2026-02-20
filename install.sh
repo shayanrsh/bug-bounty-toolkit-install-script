@@ -211,32 +211,67 @@ main() {
     install_bbtk_command
     install_bbtk_alias
 
-    if [[ -z "$MODE" ]]; then
-        show_menu
-        MODE="$MENU_CHOICE"
+    # Non-interactive modes run once and exit.
+    if [[ -n "$MODE" ]]; then
+        local summary_title="Installation Complete"
+        case "$MODE" in
+            full)           install_all ;;
+            python)         install_python_suite ;;
+            go)             install_go_suite ;;
+            docker)         install_docker_suite ;;
+            apt)            install_apt_suite ;;
+            wordlists)      install_wordlists_suite ;;
+            zsh)            install_zsh_suite ;;
+            update)         update_tools;      summary_title="Update Complete" ;;
+            update-wl)      update_wordlists;  summary_title="Wordlist Update Complete" ;;
+            update-script)  update_script;     summary_title="Script Update Complete" ;;
+            uninstall)      uninstall_all;     summary_title="Uninstall Complete" ;;
+            uninstall-sel)  uninstall_custom;  summary_title="Uninstall Complete" ;;
+            *)              log_error "Invalid mode: $MODE"; exit 1 ;;
+        esac
+        show_summary "$summary_title"
+        return 0
     fi
 
-    local summary_title="Installation Complete"
+    # Interactive mode: loop back to the menu after each operation.
+    while true; do
+        progress_init 0
+        show_menu
+        MODE="$MENU_CHOICE"
 
-    case "$MODE" in
-        1|full)           install_all ;;
-        2|python)         install_python_suite ;;
-        3|go)             install_go_suite ;;
-        4|docker)         install_docker_suite ;;
-        5|apt)            install_apt_suite ;;
-        6|wordlists)      install_wordlists_suite ;;
-        7|zsh)            install_zsh_suite ;;
-        8|custom)         install_custom ;;
-        9|update)         update_tools;      summary_title="Update Complete" ;;
-        10|update-wl)     update_wordlists;  summary_title="Wordlist Update Complete" ;;
-        11|update-script) update_script;     summary_title="Script Update Complete" ;;
-        12|uninstall)     uninstall_all;     summary_title="Uninstall Complete" ;;
-        13|uninstall-sel) uninstall_custom;  summary_title="Uninstall Complete" ;;
-        0)                printf "\n"; log_info "Goodbye!"; exit 0 ;;
-        *)                log_error "Invalid choice: $MODE"; exit 1 ;;
-    esac
+        local summary_title="Installation Complete"
+        case "$MODE" in
+            1)  install_all ;;
+            2)  install_python_suite ;;
+            3)  install_go_suite ;;
+            4)  install_docker_suite ;;
+            5)  install_apt_suite ;;
+            6)  install_wordlists_suite ;;
+            7)  install_zsh_suite ;;
+            8)  install_custom ;;
+            9)  update_tools;      summary_title="Update Complete" ;;
+            10) update_wordlists;  summary_title="Wordlist Update Complete" ;;
+            11) update_script;     summary_title="Script Update Complete" ;;
+            12) uninstall_all;     summary_title="Uninstall Complete" ;;
+            13) uninstall_custom;  summary_title="Uninstall Complete" ;;
+            0)
+                printf "\n"
+                log_info "Goodbye!"
+                exit 0
+                ;;
+            *)
+                log_error "Invalid choice: $MODE"
+                continue
+                ;;
+        esac
 
-    show_summary "$summary_title"
+        # If the operation didn't run anything (e.g., backed out), skip summary.
+        if (( PROGRESS_TOTAL > 0 )) || (( PROGRESS_DONE + PROGRESS_SKIP + PROGRESS_FAIL > 0 )); then
+            show_summary "$summary_title"
+        fi
+        read -rp "  Press Enter to return to the main menu…" _
+        MODE=""
+    done
 }
 
 main "$@"

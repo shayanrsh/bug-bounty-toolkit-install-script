@@ -434,9 +434,9 @@ echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.d
         "Prerequisites"     'sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y ca-certificates curl gnupg' \
         "Add GPG key"       'sudo install -m 0755 -d /etc/apt/keyrings && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && sudo chmod a+r /etc/apt/keyrings/docker.gpg' \
         "Add repository"    "$_add_repo" \
-        "Install packages"  'DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin' \
+        "Install packages"  'DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confnew" install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin' \
         "Enable service"    'if command -v systemctl >/dev/null 2>&1; then sudo systemctl enable docker --now 2>/dev/null || true; elif command -v service >/dev/null 2>&1; then sudo service docker start 2>/dev/null || true; fi; sudo usermod -aG docker "$(whoami)" 2>/dev/null || true' \
-        "Verify"            'sudo docker version >/dev/null 2>&1 && sudo docker compose version >/dev/null 2>&1' \
+        "Verify"            'if command -v timeout >/dev/null 2>&1; then timeout 30 sudo docker version >/dev/null 2>&1 && timeout 30 sudo docker compose version >/dev/null 2>&1; else sudo docker version >/dev/null 2>&1 && sudo docker compose version >/dev/null 2>&1; fi' \
     || true
 }
 
