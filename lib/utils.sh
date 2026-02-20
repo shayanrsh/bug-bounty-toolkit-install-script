@@ -200,17 +200,17 @@ ensure_apt_deps() {
     if (( ${#missing[@]} > 0 )); then
         log_info "Installing prerequisites: ${missing[*]}"
         sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update -qq >> "$LOG_FILE" 2>&1
-        DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y "${missing[@]}" >> "$LOG_FILE" 2>&1
+        DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y "${missing[@]}" >> "$LOG_FILE" 2>&1
     fi
     # Ensure python3 + venv
     if ! cmd_exists python3; then
-        DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y python3 python3-pip python3-venv >> "$LOG_FILE" 2>&1
+        DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y python3 python3-pip python3-venv >> "$LOG_FILE" 2>&1
     fi
     if ! python3 -c "import venv" 2>/dev/null; then
-        DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y python3-venv >> "$LOG_FILE" 2>&1
+        DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y python3-venv >> "$LOG_FILE" 2>&1
     fi
     if ! cmd_exists pipx; then
-        DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y pipx >> "$LOG_FILE" 2>&1 || true
+        DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y pipx >> "$LOG_FILE" 2>&1 || true
         pipx ensurepath >> "$LOG_FILE" 2>&1 || true
         export PATH="$PATH:$HOME/.local/bin"
     fi

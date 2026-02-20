@@ -141,7 +141,7 @@ install_go_lang() {
         print_result "go (language)" skip
     else
         if ! cmd_exists snap; then
-            DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y snapd >> "$LOG_FILE" 2>&1
+            DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y snapd >> "$LOG_FILE" 2>&1
         fi
         run_install "go (language)" "sudo snap install go --classic" || return 1
         installed_now=1
@@ -198,7 +198,7 @@ install_rust_and_x8() {
     fi
 
     # Build deps for x8
-    DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y build-essential pkg-config libssl-dev >> "$LOG_FILE" 2>&1 || true
+    DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y build-essential pkg-config libssl-dev >> "$LOG_FILE" 2>&1 || true
 
     # ── x8 ──────────────────────────────────────────────────────────────
     if cmd_exists x8; then
@@ -430,11 +430,11 @@ echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.d
     sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update -qq'
 
     run_steps "docker" done 7 \
-        "Remove conflicts"  'DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 remove -y docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc 2>/dev/null || true; sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/sources.list.d/docker.sources /etc/apt/keyrings/docker.gpg /etc/apt/keyrings/docker.asc 2>/dev/null || true' \
-        "Prerequisites"     'sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y ca-certificates curl gnupg' \
+        "Remove conflicts"  'DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 remove -y docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc 2>/dev/null || true; sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/sources.list.d/docker.sources /etc/apt/keyrings/docker.gpg /etc/apt/keyrings/docker.asc 2>/dev/null || true' \
+        "Prerequisites"     'sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y ca-certificates curl gnupg' \
         "Add GPG key"       'sudo install -m 0755 -d /etc/apt/keyrings && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && sudo chmod a+r /etc/apt/keyrings/docker.gpg' \
         "Add repository"    "$_add_repo" \
-        "Install packages"  'DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confnew" install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin' \
+        "Install packages"  'rc=0; DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confnew" install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || rc=$?; dpkg -s docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1 && exit 0; exit $rc' \
         "Enable service"    'if command -v systemctl >/dev/null 2>&1; then sudo systemctl enable docker --now 2>/dev/null || true; elif command -v service >/dev/null 2>&1; then sudo service docker start 2>/dev/null || true; fi; sudo usermod -aG docker "$(whoami)" 2>/dev/null || true' \
         "Verify"            'if command -v timeout >/dev/null 2>&1; then timeout 30 sudo docker version >/dev/null 2>&1 && timeout 30 sudo docker compose version >/dev/null 2>&1; else sudo docker version >/dev/null 2>&1 && sudo docker compose version >/dev/null 2>&1; fi' \
     || true
@@ -490,7 +490,7 @@ install_apt_snap_category() {
     done
     if (( ${#missing[@]} > 0 )); then
         # Run batch install with spinner but without counting (individual results counted below)
-        run_bg_with_spinner "apt: ${missing[*]}" "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y ${missing[*]}"
+        run_bg_with_spinner "apt: ${missing[*]}" "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y ${missing[*]}"
         # Report individual results (these are what count toward progress)
         for tool in "${missing[@]}"; do
             if is_apt_installed "$tool"; then
@@ -503,7 +503,7 @@ install_apt_snap_category() {
 
     # Snap tools
     if ! cmd_exists snap; then
-        DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y snapd >> "$LOG_FILE" 2>&1
+        DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y snapd >> "$LOG_FILE" 2>&1
     fi
     for tool in "${SNAP_TOOLS[@]}"; do
         if is_snap_installed "$tool"; then
@@ -529,7 +529,7 @@ install_wordlists_category() {
     if [[ -d "$WORDLISTS_DIR/SecLists-master" ]]; then
         print_result "SecLists" skip
     else
-        cmd_exists unzip || DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y unzip >> "$LOG_FILE" 2>&1
+        cmd_exists unzip || DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y unzip >> "$LOG_FILE" 2>&1
         run_install "SecLists" "
             cd '$WORDLISTS_DIR' && \
             wget -c https://github.com/danielmiessler/SecLists/archive/master.zip -O SecList.zip && \
@@ -618,7 +618,7 @@ install_zsh_category() {
     if cmd_exists zsh; then
         print_result "zsh" skip
     else
-        run_install "zsh" "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y zsh git fonts-font-awesome" || true
+        run_install "zsh" "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y zsh git fonts-font-awesome" || true
     fi
 
     # 2. Install Oh My Zsh
@@ -1000,7 +1000,7 @@ _install_single_tool() {
             if cmd_exists zsh; then
                 print_result "zsh" skip
             else
-                run_install "zsh" "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y zsh git fonts-font-awesome" || true
+                run_install "zsh" "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y zsh git fonts-font-awesome" || true
             fi
             install_bbtk_alias_for_shell zsh
             install_bbtk_command
@@ -1506,7 +1506,9 @@ update_script() {
     section_header "Updating Toolkit Script" 1
 
     if [[ -d "$SCRIPT_DIR/.git" ]]; then
-        run_action "bbtk script" updated "cd '$SCRIPT_DIR' && git pull --ff-only" || true
+        # The persisted bbtk copy can become dirty (e.g., from previous copies).
+        # For script update, prefer a deterministic force-sync to origin/main.
+        run_action "bbtk script" updated "cd '$SCRIPT_DIR' && git fetch origin main --prune && git reset --hard origin/main && git clean -fd" || true
     else
         run_action "bbtk script" updated "rm -rf '$CLONE_DIR' && git clone --depth 1 '$REPO_URL' '$CLONE_DIR'" || true
     fi

@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)"
 
 if [[ ! -f "$SCRIPT_DIR/lib/utils.sh" ]]; then
     echo "  [*] Detected curl-pipe execution — cloning repository…"
-    command -v git &>/dev/null || { sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y git; }
+    command -v git &>/dev/null || { sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y git; }
     rm -rf "$CLONE_DIR"
     git clone --depth 1 "$REPO_URL" "$CLONE_DIR"
     chmod +x "$CLONE_DIR/install.sh"
@@ -151,7 +151,7 @@ install_bbtk_command() {
                 fi
                 if [[ ! -x "${PERSIST_DIR}/install.sh" ]]; then
                         # Fallback: clone
-                        command -v git &>/dev/null || { sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y git; }
+                        command -v git &>/dev/null || { sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y git; }
                         git clone --depth 1 "${REPO_URL}" "${PERSIST_DIR}" >> "$LOG_FILE" 2>&1 || true
                 fi
                 chmod +x "${PERSIST_DIR}/install.sh" 2>/dev/null || true
@@ -170,7 +170,7 @@ if [[ ! -x "${PERSIST_DIR}/install.sh" ]]; then
     rm -rf "${PERSIST_DIR}" 2>/dev/null || true
     command -v git >/dev/null 2>&1 || {
         if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y git
+            sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y git
         else
             echo "Error: git is required to install bbtk." >&2
             exit 1
