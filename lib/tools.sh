@@ -419,22 +419,26 @@ _install_docker_engine() {
         return 0
     fi
 
-    # Step 4 command built with single-quotes so no escaping gymnastics are needed;
-    # variable expansions happen inside the child bash -lc shell, not here.
+    # Use Docker's official Ubuntu repo format (docker.asc + docker.sources).
+    # Variable expansions happen inside the child bash -lc shell, not here.
     local _add_repo
     _add_repo='. /etc/os-release
-ARCH=$(dpkg --print-architecture)
 CODENAME="${UBUNTU_CODENAME:-${VERSION_CODENAME}}"
-echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $CODENAME stable" \
-    | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-    sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update -qq'
+sudo tee /etc/apt/sources.list.d/docker.sources > /dev/null <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: ${CODENAME}
+Components: stable
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update -qq'
 
     run_steps "docker" done 7 \
-        "Remove conflicts"  'DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 remove -y docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc 2>/dev/null || true; sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/sources.list.d/docker.sources /etc/apt/keyrings/docker.gpg /etc/apt/keyrings/docker.asc 2>/dev/null || true' \
-        "Prerequisites"     'sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y ca-certificates curl gnupg' \
-        "Add GPG key"       'sudo install -m 0755 -d /etc/apt/keyrings && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && sudo chmod a+r /etc/apt/keyrings/docker.gpg' \
+        "Remove conflicts"  'pkgs=$(dpkg --get-selections docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc 2>/dev/null | awk "{print \$1}"); if [[ -n "${pkgs}" ]]; then DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 remove -y ${pkgs} 2>/dev/null || true; fi; sudo rm -f /etc/apt/sources.list.d/docker.list /etc/apt/sources.list.d/docker.sources /etc/apt/keyrings/docker.gpg /etc/apt/keyrings/docker.asc 2>/dev/null || true' \
+        "Prerequisites"     'sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update -qq && DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y ca-certificates curl' \
+        "Add GPG key"       'sudo install -m 0755 -d /etc/apt/keyrings && sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc && sudo chmod a+r /etc/apt/keyrings/docker.asc' \
         "Add repository"    "$_add_repo" \
-        "Install packages"  'rc=0; DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confnew" install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || rc=$?; dpkg -s docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1 && exit 0; exit $rc' \
+        "Install packages"  'set -e; rc=0; NR_DIR="/tmp/bbtk-needrestart-disabled-$$"; mkdir -p "$NR_DIR" 2>/dev/null || true; for f in /etc/apt/apt.conf.d/*needrestart* /etc/apt/apt.conf.d/*NeedRestart*; do [[ -f "$f" ]] && mv "$f" "$NR_DIR/" 2>/dev/null || true; done; trap "for g in \"$NR_DIR\"/*; do [[ -f \"$g\" ]] && mv \"$g\" /etc/apt/apt.conf.d/ 2>/dev/null || true; done; rmdir \"$NR_DIR\" 2>/dev/null || true" EXIT; DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 NEEDRESTART_SUSPEND_APT=1 APT_LISTCHANGES_FRONTEND=none sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confnew" install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || rc=$?; dpkg -s docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1 && exit 0; exit $rc' \
         "Enable service"    'if command -v systemctl >/dev/null 2>&1; then sudo systemctl enable docker --now 2>/dev/null || true; elif command -v service >/dev/null 2>&1; then sudo service docker start 2>/dev/null || true; fi; sudo usermod -aG docker "$(whoami)" 2>/dev/null || true' \
         "Verify"            'if command -v timeout >/dev/null 2>&1; then timeout 30 sudo docker version >/dev/null 2>&1 && timeout 30 sudo docker compose version >/dev/null 2>&1; else sudo docker version >/dev/null 2>&1 && sudo docker compose version >/dev/null 2>&1; fi' \
     || true
