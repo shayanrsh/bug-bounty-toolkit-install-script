@@ -9,6 +9,7 @@ set -uo pipefail
 VERSION="2.3"
 REPO_URL="https://github.com/shayanrsh/bug-bounty-toolkit-install-script.git"
 CLONE_DIR="/tmp/bug-bounty-toolkit-install-script"
+PERSIST_DIR="${HOME}/.local/share/bbtk"
 
 # ── Auto-clone when executed via curl pipe ───────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)"
@@ -137,6 +138,68 @@ install_bbtk_alias_for_shell() {
     install_bbtk_alias "$(get_rc_file_for_shell "$shell_name")"
 }
 
+# ── Install bbtk as a real command (preferred over alias) ───────────────────
+install_bbtk_command() {
+        # Persist a copy/clone so bbtk keeps working even if the current repo lives in /tmp
+        mkdir -p "${HOME}/.local/share" "${HOME}/.local/bin" 2>/dev/null || true
+
+        if [[ ! -x "${PERSIST_DIR}/install.sh" ]]; then
+                rm -rf "${PERSIST_DIR}" 2>/dev/null || true
+                if [[ -d "${SCRIPT_DIR}/.git" ]]; then
+                        # Copy current working tree (fast, no network needed)
+                        cp -a "${SCRIPT_DIR}" "${PERSIST_DIR}" 2>/dev/null || true
+                fi
+                if [[ ! -x "${PERSIST_DIR}/install.sh" ]]; then
+                        # Fallback: clone
+                        command -v git &>/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq git; }
+                        git clone --depth 1 "${REPO_URL}" "${PERSIST_DIR}" >> "$LOG_FILE" 2>&1 || true
+                fi
+                chmod +x "${PERSIST_DIR}/install.sh" 2>/dev/null || true
+        fi
+
+        local wrapper_content
+        wrapper_content=$(cat <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_URL="https://github.com/shayanrsh/bug-bounty-toolkit-install-script.git"
+PERSIST_DIR="${HOME}/.local/share/bbtk"
+
+if [[ ! -x "${PERSIST_DIR}/install.sh" ]]; then
+    mkdir -p "${HOME}/.local/share" 2>/dev/null || true
+    rm -rf "${PERSIST_DIR}" 2>/dev/null || true
+    command -v git >/dev/null 2>&1 || {
+        if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq git
+        else
+            echo "Error: git is required to install bbtk." >&2
+            exit 1
+        fi
+    }
+    git clone --depth 1 "${REPO_URL}" "${PERSIST_DIR}" >/dev/null 2>&1
+    chmod +x "${PERSIST_DIR}/install.sh" 2>/dev/null || true
+fi
+
+exec bash "${PERSIST_DIR}/install.sh" "$@"
+EOF
+)
+
+        # Prefer system-wide location so it works in any shell without PATH tweaks
+        if sudo -n true 2>/dev/null; then
+                echo "$wrapper_content" | sudo tee /usr/local/bin/bbtk >/dev/null
+                sudo chmod 0755 /usr/local/bin/bbtk
+                log_debug "Installed bbtk command in /usr/local/bin/bbtk"
+                return 0
+        fi
+
+        # Fallback per-user
+        printf "%s\n" "$wrapper_content" > "${HOME}/.local/bin/bbtk"
+        chmod 0755 "${HOME}/.local/bin/bbtk" 2>/dev/null || true
+        export PATH="$PATH:${HOME}/.local/bin"
+        add_to_all_rc 'export PATH="$PATH:$HOME/.local/bin"'
+        log_debug "Installed bbtk command in $HOME/.local/bin/bbtk"
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 main() {
     parse_args "$@"
@@ -145,6 +208,7 @@ main() {
     printf "  ${DIM}Log: %s${RESET}\n\n" "$LOG_FILE"
 
     preflight
+    install_bbtk_command
     install_bbtk_alias
 
     if [[ -z "$MODE" ]]; then

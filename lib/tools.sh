@@ -657,6 +657,7 @@ install_zsh_category() {
 
     # Ensure bbtk alias is available in zsh when user chooses to install zsh
     install_bbtk_alias_for_shell zsh
+    install_bbtk_command
 
     section_footer "Zsh + Oh My Zsh"
 }
@@ -1002,6 +1003,7 @@ _install_single_tool() {
                 run_install "zsh" "sudo apt-get install -y -qq zsh git fonts-font-awesome" || true
             fi
             install_bbtk_alias_for_shell zsh
+            install_bbtk_command
             ;;
         zsh-omz)
             if [[ -d "$HOME/.oh-my-zsh" ]]; then
@@ -1010,6 +1012,7 @@ _install_single_tool() {
                 run_install "oh-my-zsh" "RUNZSH=no CHSH=no sh -c \"\$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)\" \"\" --unattended" || true
             fi
             install_bbtk_alias_for_shell zsh
+            install_bbtk_command
             ;;
         zsh-plugin)
             local zsh_custom="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
